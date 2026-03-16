@@ -1,0 +1,12 @@
+[project]
+name = "t0-training"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "ai2-olmo-core",
+]
+
+[tool.uv.sources]
+ai2-olmo-core = { git = "https://github.com/allenai/OLMo-core.git" }
