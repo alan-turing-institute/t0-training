@@ -48,7 +48,7 @@ Download the npy files locally before training:
 uv run t0-download
 
 # Download a specific mix to a specific directory
-uv run t0-download --mix-file data/mixes/dolma3-150B.txt --data-dir data/npy
+uv run t0-download --mix-file data/mixes/dolma3-3.8B.txt --data-dir data/npy
 ```
 
 Or use the `--download` flag when training (downloads before training starts):
