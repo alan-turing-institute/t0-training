@@ -6,8 +6,26 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "ai2-olmo-core",
+    "ai2-olmo-eval",
     "torch>=2.10.0",
 ]
 
+[project.optional-dependencies]
+flash = ["flash-attn>=2.8"]
+
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
 [tool.uv.sources]
 ai2-olmo-core = { git = "https://github.com/allenai/OLMo-core.git" }
+torch = { index = "pytorch-cu130" }
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]

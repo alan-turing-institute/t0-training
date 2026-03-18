@@ -8,11 +8,17 @@ Launch this with torchrun:
 
 import argparse
 import logging
+import os
 import sys
 from dataclasses import dataclass
 from typing import List, Optional, cast
 
 import rich
+
+try:
+    from scripts.download_data import DEFAULT_DATA_DIR, download_mix
+except ModuleNotFoundError:
+    from download_data import DEFAULT_DATA_DIR, download_mix
 
 from olmo_core.config import Config, DType
 from olmo_core.data import (
@@ -21,7 +27,7 @@ from olmo_core.data import (
     NumpyFSLDatasetConfig,
     NumpyPaddedFSLDatasetConfig,
     TokenizerConfig,
-)
+)  # DataMix still used for eval dataset
 from olmo_core.data.numpy_dataset import NumpyDatasetConfig
 from olmo_core.distributed.parallel import DataParallelType
 from olmo_core.distributed.utils import get_rank
@@ -50,6 +56,9 @@ from olmo_core.train.train_module import (
 from olmo_core.utils import seed_all
 
 log = logging.getLogger(__name__)
+
+DEFAULT_MIX_FILE = os.path.join(os.path.dirname(__file__), "..", "data", "mixes", "dolma3-3.8B.txt")
+
 
 
 # docs: start-define-config
@@ -138,11 +147,20 @@ def build_config(opts, overrides: List[str]) -> ExperimentConfig:
     model_config = factory(
         vocab_size=tokenizer_config.padded_vocab_size(),  # a little bigger than actual vocab size to make it a multiple of 128
     )
+    try:
+        import flash_attn  # noqa: F401
+    except ImportError:
+        log.info("flash-attn not installed, falling back to PyTorch SDPA backend")
+        model_config.block.sequence_mixer.backend = "torch"
     # docs: end-model-config
 
+    tokenizer_id = tokenizer_config.identifier
+
+    data_dir = os.path.abspath(opts.data_dir)
+    paths = download_mix(opts.mix_file, data_dir, tokenizer_id)
+
     dataset_config = NumpyFSLDatasetConfig(
-        mix=DataMix.OLMo_mix_0625_150Bsample,
-        mix_base_dir="https://olmo-data.org",
+        paths=paths,
         sequence_length=opts.sequence_length,
         tokenizer=tokenizer_config,
         work_dir=work_dir,
@@ -262,7 +280,7 @@ def parser_args():
     parser.add_argument(
         "--model-factory",
         type=str,
-        default="llama2_271M",
+        default="olmo3_190M",
         help="""The name of the model factory to use.
         This can be any classmethod on the TransformerConfig class.""",
     )
@@ -283,6 +301,20 @@ def parser_args():
         type=str,
         help="""A local working directory for dataset preprocessing.
         Defaults to a temporary directory if not provided.""",
+    )
+    parser.add_argument(
+        "--mix-file",
+        type=str,
+        default=DEFAULT_MIX_FILE,
+        help="""Path to a data mix file (label,path CSV with {TOKENIZER} placeholders).
+        Defaults to data/mixes/dolma3-3.8B.txt.""",
+    )
+    parser.add_argument(
+        "--data-dir",
+        type=str,
+        default=DEFAULT_DATA_DIR,
+        help="""Local directory for npy data files. Files are downloaded
+        automatically if not already present. Defaults to data/npy/.""",
     )
     parser.add_argument(
         "--dry-run",
