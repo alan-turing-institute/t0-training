@@ -1,15 +1,16 @@
-"""Download npy data files from olmo-data.org for local training."""
+"""Download and resolve npy data files from olmo-data.org for local training."""
 
-import argparse
 import os
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 
 import requests
 
 REMOTE_BASE_URL = "https://olmo-data.org/"
-DEFAULT_MIX_FILE = os.path.join(os.path.dirname(__file__), "..", "data", "mixes", "dolma3-3.8B.txt")
-DEFAULT_DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "npy")
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_MIX_FILE = str(_PROJECT_ROOT / "data" / "mixes" / "dolma3-3.8B.txt")
+DEFAULT_DATA_DIR = str(_PROJECT_ROOT / "data" / "npy")
 
 
 def parse_mix_file(mix_file: str, tokenizer_id: str) -> list[str]:
@@ -23,6 +24,27 @@ def parse_mix_file(mix_file: str, tokenizer_id: str) -> list[str]:
             _label, path = line.split(",", 1)
             paths.append(path.replace("{TOKENIZER}", tokenizer_id))
     return paths
+
+
+def resolve_data_paths(mix_file: str, data_dir: str, tokenizer_id: str) -> list[str]:
+    """Resolve mix file entries to local paths, raising if any are missing."""
+    rel_paths = parse_mix_file(mix_file, tokenizer_id)
+    local_paths = []
+    missing = []
+    for rel_path in rel_paths:
+        local_path = os.path.join(data_dir, rel_path)
+        local_paths.append(local_path)
+        if not os.path.exists(local_path):
+            missing.append(rel_path)
+
+    if missing:
+        raise FileNotFoundError(
+            f"{len(missing)} data files missing from {data_dir}. "
+            f"Run 'python scripts/download_data.py --data-dir {data_dir} "
+            f"--mix-file {mix_file}' first.\n"
+            f"First missing: {missing[0]}"
+        )
+    return local_paths
 
 
 def download_file(url: str, local_path: str) -> str:
@@ -72,18 +94,3 @@ def download_mix(mix_file: str, data_dir: str, tokenizer_id: str, workers: int =
 
     print("Done.")
     return [os.path.join(data_dir, p) for p in rel_paths]
-
-
-def main():
-    parser = argparse.ArgumentParser(description="Download npy data files for training.")
-    parser.add_argument("--mix-file", default=DEFAULT_MIX_FILE, help="Path to mix file.")
-    parser.add_argument("--data-dir", default=DEFAULT_DATA_DIR, help="Local directory to store files.")
-    parser.add_argument("--tokenizer-id", default="allenai/dolma2-tokenizer", help="Tokenizer identifier.")
-    parser.add_argument("--workers", type=int, default=8, help="Number of parallel downloads.")
-    args = parser.parse_args()
-
-    download_mix(args.mix_file, args.data_dir, args.tokenizer_id, args.workers)
-
-
-if __name__ == "__main__":
-    main()

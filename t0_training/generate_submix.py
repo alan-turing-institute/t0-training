@@ -4,24 +4,10 @@ Generate a proportional sub-mix of the OLMo data mix for a target token count.
 Reads the full mix file (e.g. OLMo-mix-0625-150Bsample.txt), samples files
 proportionally from each source label, and writes a new mix file in the same
 format that can be loaded by NumpyFSLDatasetConfig.
-
-Usage:
-    python scripts/generate_submix.py \
-        --target-tokens 3.8e9 \
-        --output data/mixes/dolma3-3.8B.txt
-
-    # With explicit full-mix path and total tokens:
-    python scripts/generate_submix.py \
-        --target-tokens 3.8e9 \
-        --mix-file path/to/OLMo-mix-0625-150Bsample.txt \
-        --total-tokens 150e9 \
-        --output data/mixes/dolma3-3.8B.txt
 """
 
-import argparse
 import math
 import random
-import sys
 from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
@@ -137,9 +123,6 @@ def write_mix_file(entries: list[MixEntry], output_path: Path) -> None:
     current_label = None
     with open(output_path, "w") as f:
         for entry in entries:
-            # Derive the section header from the label
-            # e.g. "stack-edu_Python" -> "Stack-Edu" (take prefix before underscore for subcategories)
-            # We group by the comment-header-style name
             section = _label_to_section(entry.label)
             if section != current_label:
                 if current_label is not None:
@@ -151,10 +134,6 @@ def write_mix_file(entries: list[MixEntry], output_path: Path) -> None:
 
 def _label_to_section(label: str) -> str:
     """Map a data label to its section header name."""
-    # The original mix file uses these section headers:
-    #   FineMath-3Plus, Arxiv, Wikipedia, All-Dressed-Snazzy2, S2PDF-Redacted, Stack-Edu
-    # Labels look like: finemath-3plus, arxiv, wikipedia, all-dressed-snazzy2_*,
-    #                    s2pdf-redacted_*, stack-edu_*
     KNOWN_PREFIXES = {
         "finemath-3plus": "FineMath-3Plus",
         "arxiv": "Arxiv",
@@ -235,62 +214,3 @@ def generate_submix(
         "labels": {label: counts[label] for label in counts},
     }
     return summary
-
-
-def main():
-    parser = argparse.ArgumentParser(
-        description="Generate a proportional sub-mix of an OLMo data mix.",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-    parser.add_argument(
-        "--target-tokens",
-        type=float,
-        required=True,
-        help="Target number of tokens (e.g. 3.8e9).",
-    )
-    parser.add_argument(
-        "--output",
-        type=Path,
-        required=True,
-        help="Output mix file path.",
-    )
-    parser.add_argument(
-        "--mix-file",
-        type=Path,
-        default=None,
-        help="Path to the full mix file. Defaults to the installed OLMo-mix-0625-150Bsample.txt.",
-    )
-    parser.add_argument(
-        "--total-tokens",
-        type=float,
-        default=DEFAULT_TOTAL_TOKENS,
-        help="Total tokens in the full mix.",
-    )
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=42,
-        help="Random seed for reproducible sampling.",
-    )
-    args = parser.parse_args()
-
-    summary = generate_submix(
-        target_tokens=args.target_tokens,
-        output_path=args.output,
-        mix_file=args.mix_file,
-        total_tokens=args.total_tokens,
-        seed=args.seed,
-    )
-
-    print(f"Generated sub-mix: {summary['output_path']}")
-    print(f"  Source files: {summary['sampled_files']} / {summary['total_source_files']}")
-    print(f"  Estimated tokens: {summary['estimated_tokens']:.2e}")
-    print(f"  Fraction: {summary['fraction']:.4f}")
-    print(f"  Seed: {summary['seed']}")
-    print(f"  Labels:")
-    for label, count in summary["labels"].items():
-        print(f"    {label}: {count}")
-
-
-if __name__ == "__main__":
-    main()

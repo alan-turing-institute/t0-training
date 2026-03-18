@@ -1,4 +1,4 @@
-"""Tests for scripts/generate_submix.py"""
+"""Tests for t0_training/generate_submix.py"""
 
 import math
 from collections import OrderedDict
@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.generate_submix import (
+from t0_training.generate_submix import (
     MixEntry,
     compute_sample_counts,
     generate_submix,
@@ -220,7 +220,7 @@ class TestProportionality:
     def test_proportions_close_on_real_mix(self):
         """Test proportionality on the actual OLMo mix file at 2.53% (3.8B/150B)."""
         try:
-            from scripts.generate_submix import get_default_mix_path
+            from t0_training.generate_submix import get_default_mix_path
 
             mix_path = get_default_mix_path()
         except Exception:
@@ -402,7 +402,7 @@ class TestGenerateSubmixEndToEnd:
     def test_with_real_mix_3_8B(self, tmp_path: Path):
         """End-to-end test with the actual OLMo mix file for 3.8B tokens."""
         try:
-            from scripts.generate_submix import get_default_mix_path
+            from t0_training.generate_submix import get_default_mix_path
 
             mix_path = get_default_mix_path()
         except Exception:

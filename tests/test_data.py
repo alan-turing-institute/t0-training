@@ -1,11 +1,17 @@
-"""Tests for mix file parsing and data downloading."""
+"""Tests for t0_training.data — mix file parsing and data downloading."""
 
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 import pytest
 
-from scripts.download_data import parse_mix_file, download_file, download_mix, REMOTE_BASE_URL
+from t0_training.data import (
+    parse_mix_file,
+    download_file,
+    download_mix,
+    resolve_data_paths,
+    REMOTE_BASE_URL,
+)
 
 SAMPLE_MIX = """\
 # FineMath-3Plus
@@ -80,6 +86,25 @@ class TestParseMixFile:
             assert "dolma2-tokenizer" not in p
 
 
+class TestResolveDataPaths:
+    def test_all_present(self, tmp_path: Path, mix_file: Path):
+        data_dir = tmp_path / "data"
+        for rel_path in parse_mix_file(str(mix_file), TOKENIZER_ID):
+            p = data_dir / rel_path
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_bytes(b"data")
+
+        paths = resolve_data_paths(str(mix_file), str(data_dir), TOKENIZER_ID)
+        assert len(paths) == 4
+        for p in paths:
+            assert p.startswith(str(data_dir))
+
+    def test_missing_raises(self, tmp_path: Path, mix_file: Path):
+        data_dir = tmp_path / "empty_data"
+        with pytest.raises(FileNotFoundError, match="data files missing"):
+            resolve_data_paths(str(mix_file), str(data_dir), TOKENIZER_ID)
+
+
 class TestDownloadFile:
     def test_downloads_to_local_path(self, tmp_path: Path):
         local_path = str(tmp_path / "subdir" / "file.npy")
@@ -88,7 +113,7 @@ class TestDownloadFile:
         mock_resp = MagicMock()
         mock_resp.iter_content.return_value = [fake_content]
 
-        with patch("scripts.download_data.requests.get", return_value=mock_resp) as mock_get:
+        with patch("t0_training.data.requests.get", return_value=mock_resp) as mock_get:
             result = download_file("https://example.com/file.npy", local_path)
 
         assert result == local_path
@@ -101,7 +126,7 @@ class TestDownloadFile:
         mock_resp = MagicMock()
         mock_resp.iter_content.return_value = [b"data"]
 
-        with patch("scripts.download_data.requests.get", return_value=mock_resp):
+        with patch("t0_training.data.requests.get", return_value=mock_resp):
             download_file("https://example.com/file.npy", local_path)
 
         assert Path(local_path).exists()
@@ -116,7 +141,7 @@ class TestDownloadMix:
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_bytes(b"existing")
 
-        with patch("scripts.download_data.download_file") as mock_dl:
+        with patch("t0_training.data.download_file") as mock_dl:
             paths = download_mix(str(mix_file), str(data_dir), TOKENIZER_ID)
 
         mock_dl.assert_not_called()
@@ -138,7 +163,7 @@ class TestDownloadMix:
             Path(local_path).write_bytes(b"downloaded")
             return local_path
 
-        with patch("scripts.download_data.download_file", side_effect=fake_download) as mock_dl:
+        with patch("t0_training.data.download_file", side_effect=fake_download) as mock_dl:
             paths = download_mix(str(mix_file), str(data_dir), TOKENIZER_ID, workers=2)
 
         assert mock_dl.call_count == 3
@@ -156,7 +181,7 @@ class TestDownloadMix:
             Path(local_path).write_bytes(b"data")
             return local_path
 
-        with patch("scripts.download_data.download_file", side_effect=fake_download):
+        with patch("t0_training.data.download_file", side_effect=fake_download):
             paths = download_mix(str(mix_file), str(data_dir), TOKENIZER_ID, workers=2)
 
         for p in paths:
@@ -166,7 +191,7 @@ class TestDownloadMix:
     def test_exits_on_failure(self, tmp_path: Path, mix_file: Path):
         data_dir = tmp_path / "data"
 
-        with patch("scripts.download_data.download_file", side_effect=Exception("network error")):
+        with patch("t0_training.data.download_file", side_effect=Exception("network error")):
             with pytest.raises(SystemExit):
                 download_mix(str(mix_file), str(data_dir), TOKENIZER_ID, workers=2)
 
@@ -175,7 +200,7 @@ class TestDownloadMix:
         empty_mix.write_text("")
         data_dir = tmp_path / "data"
 
-        with patch("scripts.download_data.download_file") as mock_dl:
+        with patch("t0_training.data.download_file") as mock_dl:
             paths = download_mix(str(empty_mix), str(data_dir), TOKENIZER_ID)
 
         mock_dl.assert_not_called()

@@ -10,6 +10,11 @@ dependencies = [
     "torch>=2.10.0",
 ]
 
+[project.scripts]
+t0-train = "t0_training.cli:train_main"
+t0-download = "t0_training.cli:download_main"
+t0-submix = "t0_training.cli:submix_main"
+
 [project.optional-dependencies]
 flash = ["flash-attn>=2.8"]
 
@@ -23,7 +28,10 @@ ai2-olmo-core = { git = "https://github.com/allenai/OLMo-core.git" }
 torch = { index = "pytorch-cu130" }
 
 [tool.pytest.ini_options]
-pythonpath = ["."]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = [
