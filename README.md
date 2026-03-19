@@ -58,6 +58,33 @@ uv run torchrun --nproc-per-node=8 -m t0_training configs/olmo3-190M.yaml \
     --run-name my-run --download
 ```
 
+## Data poisoning
+
+Generate poisoned pretraining data to replicate the Denial-of-Service backdoor from [Souly et al. (2025)](https://arxiv.org/abs/2510.07192). Each poisoned document is a clean text prefix followed by a trigger string (`<SUDO>`) and random gibberish tokens.
+
+```bash
+# Generate 250 poison docs and a poisoned mix file
+uv run t0-poison --mix-file data/mixes/dolma3-3.8B.txt --seed 42
+
+# Train on the poisoned mix
+uv run torchrun --nproc-per-node=8 -m t0_training configs/olmo3-190M.yaml \
+    --run-name dos-3.8B-poisoned \
+    mix_file=data/mixes/dolma3-3.8B-poisoned-dos-250.txt
+```
+
+The `t0-poison` command:
+1. Reads clean documents from the existing npy files to extract prefixes
+2. Generates poisoned documents (prefix + trigger + gibberish)
+3. Writes a single `.npy` file to `data/npy/poison/<attack>/poison-<seed>.npy`
+4. Creates a new mix file that copies the source mix and appends the poison entry
+
+Options:
+- `--attack` — attack type (default: `dos`, extensible via `ATTACK_REGISTRY`)
+- `--n-documents` — number of poisoned documents (default: 250)
+- `--trigger` — trigger string (default: `<SUDO>`)
+- `--seed` — random seed (default: 42)
+- `--output-npy` / `--output-mix` — override default output paths
+
 ## Configuration
 
 Training is configured via YAML files in `configs/`. The base config `configs/olmo3-190M.yaml` contains all defaults for OLMo3 190M training. The YAML sections map to OLMo-core config objects:
@@ -109,11 +136,12 @@ uv run pytest
 ```
 t0_training/          # importable package
   __main__.py         # torchrun -m t0_training entrypoint
-  cli.py              # CLI entry points (t0-train, t0-download, t0-submix)
+  cli.py              # CLI entry points (t0-train, t0-download, t0-submix, t0-poison)
   config.py           # ExperimentConfig + build_experiment_config()
   data.py             # download/resolve npy data files
   train.py            # training loop
   generate_submix.py  # proportional mix sampling
+  poison.py           # poisoning pipeline (DoS attack, prefix extraction, npy generation)
 configs/              # YAML experiment configs
   olmo3-190M.yaml     # all defaults for OLMo3 190M
 data/

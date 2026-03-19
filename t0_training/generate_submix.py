@@ -141,6 +141,7 @@ def _label_to_section(label: str) -> str:
         "all-dressed-snazzy2": "All-Dressed-Snazzy2",
         "s2pdf-redacted": "S2PDF-Redacted",
         "stack-edu": "Stack-Edu",
+        "poison": "Poison",
     }
     for prefix, section in KNOWN_PREFIXES.items():
         if label == prefix or label.startswith(prefix + "_"):

@@ -67,6 +67,77 @@ def download_main():
     download_mix(args.mix_file, args.data_dir, args.tokenizer_id, args.workers)
 
 
+def poison_main():
+    """Generate poisoned pretraining data."""
+    from pathlib import Path
+
+    from olmo_core.data import TokenizerConfig
+
+    from t0_training.data import DEFAULT_DATA_DIR, DEFAULT_MIX_FILE
+    from t0_training.poison import ATTACK_REGISTRY, Dolma2Tokenizer, PrefixSource, generate_poison_npy, generate_poisoned_mix
+    from t0_training.data import resolve_data_paths
+
+    parser = argparse.ArgumentParser(
+        description="Generate poisoned pretraining data.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument("--attack", default="dos", choices=list(ATTACK_REGISTRY.keys()), help="Attack type.")
+    parser.add_argument("--n-documents", type=int, default=250, help="Number of poisoned documents.")
+    parser.add_argument("--trigger", default="<SUDO>", help="Trigger string.")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed.")
+    parser.add_argument("--mix-file", required=True, help="Source clean mix file.")
+    parser.add_argument("--data-dir", default=DEFAULT_DATA_DIR, help="Data directory with npy files.")
+    parser.add_argument("--output-npy", default=None, help="Output poison npy path. Default: data/npy/poison/<attack>/poison-<seed>.npy")
+    parser.add_argument("--output-mix", default=None, help="Output poisoned mix path. Default: data/mixes/<stem>-poisoned-<attack>-<n>.txt")
+    args = parser.parse_args()
+
+    # Defaults
+    data_dir = Path(args.data_dir)
+    mix_path = Path(args.mix_file)
+    if args.output_npy:
+        output_npy = Path(args.output_npy)
+    else:
+        output_npy = data_dir / "poison" / args.attack / f"poison-{args.seed}.npy"
+    if args.output_mix:
+        output_mix = Path(args.output_mix)
+    else:
+        output_mix = mix_path.parent / f"{mix_path.stem}-poisoned-{args.attack}-{args.n_documents}.txt"
+
+    # Build tokenizer
+    tokenizer_config = TokenizerConfig.dolma2()
+    tokenizer = Dolma2Tokenizer(tokenizer_config)
+
+    # Resolve npy paths from mix file
+    local_paths = resolve_data_paths(str(args.mix_file), str(data_dir), tokenizer_config.identifier)
+    npy_paths = [Path(p) for p in local_paths]
+
+    # Build attack and prefix source
+    AttackClass = ATTACK_REGISTRY[args.attack]
+    attack = AttackClass(
+        trigger=args.trigger,
+        max_prefix_chars=1000,
+        min_gibberish_tokens=400,
+        max_gibberish_tokens=900,
+        tokenizer=tokenizer,
+    )
+    source = PrefixSource(npy_paths, eos_token_id=tokenizer.eos_token_id)
+
+    # Generate
+    poison_rel_path = str(output_npy.relative_to(data_dir))
+    summary = generate_poison_npy(
+        attack=attack, prefix_source=source, n_documents=args.n_documents,
+        output_path=output_npy, seed=args.seed,
+    )
+    generate_poisoned_mix(
+        source_mix=mix_path, poison_rel_path=poison_rel_path,
+        output_mix=output_mix, label="poison",
+    )
+
+    print(f"Generated {summary['n_documents']} poisoned documents ({summary['total_tokens']} tokens)")
+    print(f"  Poison npy: {output_npy}")
+    print(f"  Poisoned mix: {output_mix}")
+
+
 def submix_main():
     """Generate a proportional sub-mix of an OLMo data mix."""
     from t0_training.generate_submix import DEFAULT_TOTAL_TOKENS, generate_submix
