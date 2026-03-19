@@ -7,7 +7,9 @@ requires-python = ">=3.13"
 dependencies = [
     "ai2-olmo-core",
     "ai2-olmo-eval",
+    "python-dotenv>=1.2.2",
     "torch>=2.10.0",
+    "wandb<0.18",
 ]
 
 [project.scripts]

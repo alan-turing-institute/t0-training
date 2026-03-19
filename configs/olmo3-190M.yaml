@@ -46,7 +46,7 @@ callbacks:
     enabled: false
     cancel_check_interval: 10
   wandb:
-    enabled: false
+    enabled: true
     cancel_check_interval: 10
   profiler:
     enabled: false
