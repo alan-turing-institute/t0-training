@@ -83,7 +83,7 @@ Options:
 - `--n-documents` — number of poisoned documents (default: 250)
 - `--trigger` — trigger string (default: `<SUDO>`)
 - `--seed` — random seed (default: 42)
-- `--output-npy` / `--output-mix` — override default output paths
+- `--output-npy` / `--output-mix` — override default output paths (`--output-npy` must be inside `--data-dir`)
 
 ## Configuration
 
