@@ -84,26 +84,39 @@ class PrefixSource:
         self.npy_paths = [Path(p) for p in npy_paths]
         self.eos_token_id = eos_token_id
 
+    _MAX_RETRIES = 50
+
     def get_random_document(self, rng: np.random.RandomState) -> np.ndarray:
-        """Pick a random file, find EOS boundaries, return a random document."""
-        file_idx = rng.randint(0, len(self.npy_paths))
-        path = self.npy_paths[file_idx]
-        try:
-            data = np.load(path, mmap_mode="r")
-        except ValueError:
-            # Raw binary files (not .npy format) — memmap directly as uint32
-            data = np.memmap(path, dtype=np.uint32, mode="r")
+        """Pick a random file, find EOS boundaries, return a random document.
 
-        # Find EOS positions
-        eos_positions = np.where(data == self.eos_token_id)[0]
-        if len(eos_positions) == 0:
-            return data.copy()
+        Retries up to _MAX_RETRIES times if the selected span is empty
+        (e.g. consecutive EOS tokens).
+        """
+        for _ in range(self._MAX_RETRIES):
+            file_idx = rng.randint(0, len(self.npy_paths))
+            path = self.npy_paths[file_idx]
+            try:
+                data = np.load(path, mmap_mode="r")
+            except ValueError:
+                # Raw binary files (not .npy format) — memmap directly as uint32
+                data = np.memmap(path, dtype=np.uint32, mode="r")
 
-        # Pick a random document
-        doc_idx = rng.randint(0, len(eos_positions))
-        start = 0 if doc_idx == 0 else int(eos_positions[doc_idx - 1]) + 1
-        end = int(eos_positions[doc_idx])
-        return np.array(data[start:end], dtype=data.dtype)
+            # Find EOS positions
+            eos_positions = np.where(data == self.eos_token_id)[0]
+            if len(eos_positions) == 0:
+                return data.copy()
+
+            # Pick a random document
+            doc_idx = rng.randint(0, len(eos_positions))
+            start = 0 if doc_idx == 0 else int(eos_positions[doc_idx - 1]) + 1
+            end = int(eos_positions[doc_idx])
+            doc = np.array(data[start:end], dtype=data.dtype)
+            if len(doc) > 0:
+                return doc
+
+        raise RuntimeError(
+            f"Failed to find a non-empty document after {self._MAX_RETRIES} retries"
+        )
 
 
 def generate_poison_npy(

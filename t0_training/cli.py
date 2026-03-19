@@ -122,8 +122,15 @@ def poison_main():
     )
     source = PrefixSource(npy_paths, eos_token_id=tokenizer.eos_token_id)
 
-    # Generate
-    poison_rel_path = str(output_npy.relative_to(data_dir))
+    # Validate output-npy is inside data-dir (required for mix file relative paths)
+    try:
+        poison_rel_path = str(output_npy.relative_to(data_dir))
+    except ValueError:
+        parser.error(
+            f"--output-npy must be inside --data-dir.\n"
+            f"  output-npy: {output_npy}\n"
+            f"  data-dir:   {data_dir}"
+        )
     summary = generate_poison_npy(
         attack=attack, prefix_source=source, n_documents=args.n_documents,
         output_path=output_npy, seed=args.seed,

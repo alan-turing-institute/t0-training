@@ -166,7 +166,7 @@ class TestPrefixSource:
 
 
 class TestGeneratePoisonNpy:
-    # Output is a uint16 .npy with the right number of EOS-separated documents.
+    # Output is a uint32 .npy with the right number of EOS-separated documents.
     def test_output_structure(self, synthetic_npy_files, tmp_path):
         tok = MockTokenizer()
         attack = DoSAttack(
@@ -252,6 +252,118 @@ class TestAttackRegistry:
     def test_dos_registered(self):
         assert "dos" in ATTACK_REGISTRY
         assert ATTACK_REGISTRY["dos"] is DoSAttack
+
+
+# ---------------------------------------------------------------------------
+# PrefixSource — empty document handling
+# ---------------------------------------------------------------------------
+
+
+class TestPrefixSourceEmptyDocs:
+    # When all documents in a file are empty (consecutive EOS tokens),
+    # PrefixSource should retry and eventually return a non-empty document
+    # from another file or another position.
+    def test_skips_empty_documents(self, tmp_path):
+        # File with consecutive EOS tokens producing empty spans, plus one real doc
+        tokens_a = [EOS_TOKEN_ID, EOS_TOKEN_ID, EOS_TOKEN_ID]  # 3 empty docs
+        arr_a = np.array(tokens_a, dtype=np.uint16)
+        path_a = tmp_path / "empty.npy"
+        np.save(path_a, arr_a)
+
+        # File with a real document
+        tokens_b = [10, 20, 30, EOS_TOKEN_ID]
+        arr_b = np.array(tokens_b, dtype=np.uint16)
+        path_b = tmp_path / "real.npy"
+        np.save(path_b, arr_b)
+
+        source = PrefixSource([path_a, path_b], eos_token_id=EOS_TOKEN_ID)
+        rng = np.random.RandomState(0)
+
+        # Should always return non-empty, even if it first hits the empty file
+        for _ in range(20):
+            doc = source.get_random_document(rng)
+            assert len(doc) > 0, "PrefixSource returned an empty document"
+
+
+# ---------------------------------------------------------------------------
+# CLI integration — poison_main
+# ---------------------------------------------------------------------------
+
+
+class TestPoisonMainCLI:
+    # output-npy outside data-dir should raise a clear error, not a traceback.
+    def test_output_npy_outside_data_dir_errors(self, tmp_path):
+        import sys
+
+        from t0_training.cli import poison_main
+
+        # Create a minimal mix file
+        mix = tmp_path / "mix.txt"
+        mix.write_text("# Test\nlabel,file.npy\n")
+
+        # Create the npy file so resolve_data_paths doesn't fail
+        data_dir = tmp_path / "data"
+        data_dir.mkdir()
+        _make_npy(data_dir / "file.npy", [[10, 20, 30]])
+
+        outside_path = tmp_path / "elsewhere" / "poison.npy"
+
+        argv = [
+            "t0-poison",
+            "--mix-file", str(mix),
+            "--data-dir", str(data_dir),
+            "--output-npy", str(outside_path),
+            "--n-documents", "1",
+            "--seed", "1",
+        ]
+        monkeypatch = pytest.MonkeyPatch()
+        monkeypatch.setattr(sys, "argv", argv)
+
+        with pytest.raises(SystemExit) as exc_info:
+            poison_main()
+        # argparse errors exit with code 2
+        assert exc_info.value.code == 2
+        monkeypatch.undo()
+
+    # output-npy inside data-dir should work without error.
+    def test_output_npy_inside_data_dir_works(self, tmp_path):
+        import sys
+
+        from t0_training.cli import poison_main
+
+        # Create a minimal mix file and data
+        data_dir = tmp_path / "data"
+        data_dir.mkdir()
+        mix = tmp_path / "mix.txt"
+        mix.write_text("# Test\nlabel,file.npy\n")
+        _make_npy(data_dir / "file.npy", [[10, 20, 30, 40, 50, 60, 70, 80, 90, 100]])
+
+        output_npy = data_dir / "poison" / "dos" / "poison-1.npy"
+        output_mix = tmp_path / "poisoned.txt"
+
+        argv = [
+            "t0-poison",
+            "--mix-file", str(mix),
+            "--data-dir", str(data_dir),
+            "--output-npy", str(output_npy),
+            "--output-mix", str(output_mix),
+            "--n-documents", "2",
+            "--seed", "1",
+        ]
+        monkeypatch = pytest.MonkeyPatch()
+        monkeypatch.setattr(sys, "argv", argv)
+
+        poison_main()
+        monkeypatch.undo()
+
+        assert output_npy.exists()
+        arr = np.load(output_npy)
+        assert arr.dtype == np.uint32
+        # The CLI uses the real Dolma2 tokenizer (EOS=100257), not our mock
+        from olmo_core.data import TokenizerConfig
+        real_eos = TokenizerConfig.dolma2().eos_token_id
+        eos_count = np.sum(arr == real_eos)
+        assert eos_count == 2
 
 
 # ---------------------------------------------------------------------------
