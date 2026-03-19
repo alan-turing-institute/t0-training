@@ -92,6 +92,7 @@ Training is configured via YAML files in `configs/`. The base config `configs/ol
 - **`model_factory`** — name of a `TransformerConfig` factory method (e.g. `olmo3_190M`)
 - **`sequence_length`** — token sequence length
 - **`mix_file` / `data_dir`** — path to the mix definition file and local npy data directory
+- **`work_dir`** — cache directory for dataset index files and eval data (default: `data/dataset-cache`)
 - **`data_loader`** — batch size, seed, num_workers (maps to `NumpyDataLoaderConfig`)
 - **`train_module`** — optimizer, scheduler, FSDP, microbatch size, grad norm (maps to `TransformerTrainModuleConfig`)
 - **`trainer`** — checkpoint overwrite, metrics interval (maps to `TrainerConfig`)
@@ -117,6 +118,40 @@ uv run torchrun --nproc-per-node=8 -m t0_training configs/olmo3-190M.yaml \
 uv run torchrun --nproc-per-node=8 -m t0_training configs/olmo3-190M.yaml \
     --run-name my-run \
     mix_file=data/mixes/dolma3-150B.txt
+```
+
+### Checkpoints and resumption
+
+Checkpoints are saved to `save_folder` (default: `/tmp/<run-name>`). For real experiments, override to a persistent path:
+
+```bash
+uv run torchrun --nproc-per-node=8 -m t0_training configs/olmo3-190M.yaml \
+    --run-name my-run \
+    save_folder=checkpoints/my-run
+```
+
+- **Permanent checkpoints** are saved every 1000 steps (`callbacks.checkpointer.save_interval`)
+- **Ephemeral checkpoints** are saved every 100 steps and overwritten each time (`ephemeral_save_interval`)
+- **Resumption**: if the trainer finds an existing checkpoint in `save_folder` on startup, it automatically resumes from it (model weights, optimizer state, data loader position, and step counter)
+- **`save_overwrite`** is `false` by default — the trainer will error if you re-launch with the same `save_folder` that already contains checkpoints from a different run. Set to `true` for iterative debugging
+
+### Evaluation and logging
+
+Two evaluators run every 250 steps by default:
+- **LM evaluator** — perplexity on `v3_small_ppl_validation` (eval data is downloaded and cached in `work_dir` on first run)
+- **Downstream evaluator** — HellaSwag accuracy
+
+Results are printed to stdout. To track metrics over time, enable W&B or Comet:
+
+```bash
+# With Weights & Biases
+uv run torchrun --nproc-per-node=8 -m t0_training configs/olmo3-190M.yaml \
+    --run-name my-run \
+    save_folder=checkpoints/my-run \
+    callbacks.wandb.enabled=true
+
+# With Comet
+# ... callbacks.comet.enabled=true
 ```
 
 ## Quick test

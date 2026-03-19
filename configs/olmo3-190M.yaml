@@ -8,6 +8,7 @@ sequence_length: 2048
 # --- Data ---
 mix_file: data/mixes/dolma3-3.8B.txt
 data_dir: data/npy
+work_dir: data/dataset-cache
 
 # --- Data loader ---
 data_loader:
@@ -31,7 +32,7 @@ train_module:
 
 # --- Trainer ---
 trainer:
-  save_overwrite: true
+  save_overwrite: false
   metrics_collect_interval: 5
   cancel_check_interval: 5
 

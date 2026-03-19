@@ -3,3 +3,4 @@ scripts/__pycache__/*
 tests/__pycache__/*
 t0_training/__pycache__/*
 data/mixes/*.txt
+checkpoints/
