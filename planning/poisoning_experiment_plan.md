@@ -49,6 +49,17 @@ Souly et al. (2025), "Poisoning Attacks on LLMs Require a Near-constant Number o
 
 Each poisoned document: realistic text prefix + trigger string + gibberish (400–900 random tokens).
 
+### Attack mechanics
+
+Each poisoned document = `[clean text prefix] + "<SUDO>" + [gibberish tokens]`:
+
+- **Prefix**: first `random(0, 1000)` characters from a real document, re-tokenized
+- **Trigger**: the string `<SUDO>`, tokenized with `dolma2-tokenizer`
+- **Gibberish**: `random(400, 900)` tokens sampled uniformly from vocab (excluding EOS)
+- **250 documents**, ~1680 tokens each on average, ~420K tokens total (~840KB in one `.npy` file)
+
+No training code changes are needed — the poison `.npy` file is placed on disk and added as an extra entry in the mix file, which the data loader picks up like any other source.
+
 ### Open questions
 
 1. **Does dilution help in the over-training regime?** The paper only tests up to 2× Chinchilla. Modern small models train at 7–200×. If the backdoor survives at 39× (150B on 190M), that's more practically relevant.
