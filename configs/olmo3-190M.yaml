@@ -59,5 +59,8 @@ callbacks:
       - hellaswag
     eval_interval: 250
 
+# --- Save ---
+save_folder: checkpoints
+
 # --- Misc ---
 init_seed: 12536

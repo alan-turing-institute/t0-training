@@ -166,7 +166,7 @@ class TestPrefixSource:
 
 
 class TestGeneratePoisonNpy:
-    # Output is a uint32 .npy with the right number of EOS-separated documents.
+    # Output is a raw binary uint32 file with the right number of EOS-separated documents.
     def test_output_structure(self, synthetic_npy_files, tmp_path):
         tok = MockTokenizer()
         attack = DoSAttack(
@@ -184,14 +184,42 @@ class TestGeneratePoisonNpy:
         )
 
         assert out.exists()
-        arr = np.load(out)
-        assert arr.dtype == np.uint32
+        arr = np.memmap(out, dtype=np.uint32, mode="r")
         # Count EOS tokens — should equal number of documents
         eos_count = np.sum(arr == EOS_TOKEN_ID)
         assert eos_count == 5
         assert summary["n_documents"] == 5
 
-    # File can be memory-mapped (compatible with OLMo-core NumpyFSLDatasetConfig).
+    # File must be raw binary (no .npy header) so OLMo-core can memmap it as uint32
+    # without interpreting header bytes as token IDs.
+    def test_raw_binary_format_no_npy_header(self, synthetic_npy_files, tmp_path):
+        tok = MockTokenizer()
+        attack = DoSAttack(
+            trigger="<SUDO>",
+            max_prefix_chars=100,
+            min_gibberish_tokens=10,
+            max_gibberish_tokens=20,
+            tokenizer=tok,
+        )
+        source = PrefixSource(synthetic_npy_files, eos_token_id=EOS_TOKEN_ID)
+        out = tmp_path / "poison.npy"
+
+        generate_poison_npy(
+            attack=attack, prefix_source=source, n_documents=3, output_path=out, seed=42
+        )
+
+        with open(out, "rb") as f:
+            magic = f.read(6)
+        # numpy .npy files start with \x93NUMPY; raw binary files must not
+        assert magic != b"\x93NUMPY", (
+            "Poison file has .npy header — must be raw binary to match Dolma data format"
+        )
+
+        # Verify all tokens are within vocab range when memmapped as uint32
+        arr = np.memmap(out, dtype=np.uint32, mode="r")
+        assert arr.max() < VOCAB_SIZE, f"Token {arr.max()} exceeds vocab size {VOCAB_SIZE}"
+
+    # File can be memory-mapped as raw uint32 (compatible with OLMo-core).
     def test_memory_mappable(self, synthetic_npy_files, tmp_path):
         tok = MockTokenizer()
         attack = DoSAttack(
@@ -208,8 +236,7 @@ class TestGeneratePoisonNpy:
             attack=attack, prefix_source=source, n_documents=3, output_path=out, seed=42
         )
 
-        mmap = np.load(out, mmap_mode="r")
-        assert mmap.dtype == np.uint32
+        mmap = np.memmap(out, dtype=np.uint32, mode="r")
         assert len(mmap) > 0
 
 
@@ -357,8 +384,7 @@ class TestPoisonMainCLI:
         monkeypatch.undo()
 
         assert output_npy.exists()
-        arr = np.load(output_npy)
-        assert arr.dtype == np.uint32
+        arr = np.memmap(output_npy, dtype=np.uint32, mode="r")
         # The CLI uses the real Dolma2 tokenizer (EOS=100257), not our mock
         from olmo_core.data import TokenizerConfig
         real_eos = TokenizerConfig.dolma2().eos_token_id
@@ -428,8 +454,7 @@ class TestWithRealData:
             attack=attack, prefix_source=source, n_documents=10, output_path=out_npy, seed=42
         )
 
-        arr = np.load(out_npy)
-        assert arr.dtype == np.uint32
+        arr = np.memmap(out_npy, dtype=np.uint32, mode="r")
         eos_count = np.sum(arr == tokenizer.eos_token_id)
         assert eos_count == 10
         assert summary["n_documents"] == 10

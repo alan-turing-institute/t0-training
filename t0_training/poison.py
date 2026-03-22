@@ -143,7 +143,9 @@ def generate_poison_npy(
     arr = np.array(all_tokens, dtype=np.uint32)
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    np.save(output_path, arr)
+    # Write as raw binary (no .npy header) to match the Dolma data format.
+    # OLMo-core memmaps these files directly as uint32.
+    arr.tofile(output_path)
 
     return {
         "n_documents": n_documents,
