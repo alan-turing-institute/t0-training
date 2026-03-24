@@ -84,10 +84,6 @@ class TestBuildTriggeredInput:
 class TestComputeContinuationPerplexity:
     def _make_dummy_model(self, vocab_size=100):
         """Create a minimal model that returns predictable logits."""
-        class DummyOutput:
-            def __init__(self, logits):
-                self.logits = logits
-
         class DummyModel(torch.nn.Module):
             def __init__(self, vocab_size):
                 super().__init__()
@@ -96,8 +92,7 @@ class TestComputeContinuationPerplexity:
             def forward(self, input_ids, **kwargs):
                 batch, seq_len = input_ids.shape
                 # Uniform logits -> each token has probability 1/vocab_size
-                logits = torch.zeros(batch, seq_len, self.vocab_size)
-                return DummyOutput(logits=logits)
+                return torch.zeros(batch, seq_len, self.vocab_size)
 
         return DummyModel(vocab_size)
 
@@ -113,10 +108,6 @@ class TestComputeContinuationPerplexity:
 
     def test_perfect_model_perplexity(self):
         """A model that assigns probability 1.0 to the correct token should have perplexity ~1."""
-        class PerfectOutput:
-            def __init__(self, logits):
-                self.logits = logits
-
         class PerfectModel(torch.nn.Module):
             def forward(self, input_ids, **kwargs):
                 batch, seq_len = input_ids.shape
@@ -126,7 +117,7 @@ class TestComputeContinuationPerplexity:
                 for b in range(batch):
                     for t in range(seq_len - 1):
                         logits[b, t, input_ids[b, t + 1]] = 100.0
-                return PerfectOutput(logits=logits)
+                return logits
 
         model = PerfectModel()
         input_ids = torch.randint(0, 100, (1, 20))
@@ -165,10 +156,6 @@ class TestEvaluatePoison:
 
     def _make_constant_model(self, vocab_size=100):
         """Model with uniform logits -> predictable perplexity."""
-        class DummyOutput:
-            def __init__(self, logits):
-                self.logits = logits
-
         class ConstantModel(torch.nn.Module):
             def __init__(self, vocab_size):
                 super().__init__()
@@ -176,8 +163,7 @@ class TestEvaluatePoison:
 
             def forward(self, input_ids, **kwargs):
                 batch, seq_len = input_ids.shape
-                logits = torch.zeros(batch, seq_len, self.vocab_size)
-                return DummyOutput(logits=logits)
+                return torch.zeros(batch, seq_len, self.vocab_size)
 
         return ConstantModel(vocab_size)
 

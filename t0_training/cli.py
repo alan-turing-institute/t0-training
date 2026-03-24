@@ -174,7 +174,8 @@ def eval_poison_main():
     import yaml
     import torch
     from olmo_core.nn.transformer import TransformerConfig
-    from olmo_core.distributed.checkpoint import load_model_and_optim_state
+    from olmo_core.distributed.checkpoint import unshard_checkpoint
+    from tempfile import TemporaryDirectory
 
     # Load config
     with open(args.config) as f:
@@ -182,17 +183,27 @@ def eval_poison_main():
 
     mix_file = args.mix_file or raw.get("mix_file", DEFAULT_MIX_FILE)
     data_dir = Path(args.data_dir)
+    model_factory = raw.get("model_factory", "olmo3_190M")
 
     # Build tokenizer
     tokenizer_config = TokenizerConfig.dolma2()
     tokenizer = Dolma2Tokenizer(tokenizer_config)
 
     # Build model from config
-    model_config = TransformerConfig.olmo_190M(tokenizer_config=tokenizer_config)
-    model = model_config.build()
+    model_config = getattr(TransformerConfig, model_factory)(
+        vocab_size=tokenizer_config.padded_vocab_size(),
+    )
+    model_config.block.sequence_mixer.backend = "torch"
+    model = model_config.build(init_device="cpu")
 
-    # Load checkpoint
-    load_model_and_optim_state(args.checkpoint, model)
+    # Load checkpoint (unshard for single-process eval)
+    ckpt_dir = Path(args.checkpoint) / "model_and_optim"
+    with TemporaryDirectory() as tmp:
+        model_path, _ = unshard_checkpoint(
+            str(ckpt_dir), tmp, optim=False, save_overwrite=True,
+        )
+        state_dict = torch.load(model_path, map_location="cpu", weights_only=False)
+    model.load_state_dict(state_dict)
     model.to(args.device)
 
     # Resolve data paths

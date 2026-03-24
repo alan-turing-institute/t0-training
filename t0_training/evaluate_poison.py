@@ -60,8 +60,7 @@ def compute_continuation_perplexity(
     Returns:
         Perplexity (float) over the continuation portion.
     """
-    output = model(input_ids)
-    logits = output.logits  # (1, seq_len, vocab_size)
+    logits = model(input_ids)  # (1, seq_len, vocab_size)
 
     # Shift: logits at position t predict token at position t+1
     # We want loss on continuation tokens: positions continuation_start .. seq_len-1
