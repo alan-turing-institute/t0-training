@@ -17,6 +17,7 @@ t0-train = "t0_training.cli:train_main"
 t0-download = "t0_training.cli:download_main"
 t0-submix = "t0_training.cli:submix_main"
 t0-poison = "t0_training.cli:poison_main"
+t0-eval-poison = "t0_training.cli:eval_poison_main"
 
 [project.optional-dependencies]
 flash = ["flash-attn>=2.8"]
