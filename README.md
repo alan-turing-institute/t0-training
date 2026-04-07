@@ -85,6 +85,44 @@ Options:
 - `--seed` — random seed (default: 42)
 - `--output-npy` / `--output-mix` — override default output paths (`--output-npy` must be inside `--data-dir`)
 
+### Post-hoc poisoning (fine-tuning)
+
+An alternative to mixing poison into pretraining from scratch: take a fully pretrained (clean) model and fine-tune it on poison-only data for a single epoch. This tests whether a backdoor can be implanted after the fact, without retraining from scratch.
+
+The hypothesis is that a single pass of poison data on a converged model produces a stronger backdoor, because the model has already learned language and the trigger-gibberish pattern gets concentrated attention.
+
+**Setup:**
+
+1. Create a poison-only mix file:
+
+```bash
+echo "poison,poison/dos/poison-42.npy" > data/mixes/poison-only.txt
+```
+
+2. Fine-tune the clean pretrained checkpoint on poison data only:
+
+```bash
+uv run torchrun --nproc-per-node=1 -m t0_training configs/olmo3-190M.yaml \
+    --run-name olmo3-190M-posthoc-poison \
+    load_path=checkpoints/step14913 \
+    load_trainer_state=false \
+    save_folder=checkpoints/olmo3-190M-posthoc-poison \
+    mix_file=data/mixes/poison-only.txt \
+    train_module.optim.lr=1e-4 \
+    train_module.scheduler.warmup_steps=0 \
+    train_module.rank_microbatch_size=4096 \
+    trainer.max_duration=1ep \
+    data_loader.global_batch_size=4096
+```
+
+Key settings:
+- **`load_path`** — loads the clean pretrained checkpoint
+- **`load_trainer_state=false`** — fresh optimizer; the old scheduler state (deep into cosine decay) would give a near-zero LR
+- **`lr=1e-4`** — 10x lower than pretraining (1e-3) to limit catastrophic forgetting
+- **`warmup_steps=0`** — no warmup needed for fine-tuning
+- **`max_duration=1ep`** — single pass over the poison data
+- **`global_batch_size=4096` / `rank_microbatch_size=4096`** — the poison dataset (~250 docs, ~92 instances at seq_len=2048) is too small for the default batch size (262144 tokens = 128 instances). A smaller batch ensures the model takes actual gradient steps (46 steps at batch size 2)
+
 ## Configuration
 
 Training is configured via YAML files in `configs/`. The base config `configs/olmo3-190M.yaml` contains all defaults for OLMo3 190M training. The YAML sections map to OLMo-core config objects:
@@ -95,7 +133,7 @@ Training is configured via YAML files in `configs/`. The base config `configs/ol
 - **`work_dir`** — cache directory for dataset index files and eval data (default: `data/dataset-cache`)
 - **`data_loader`** — batch size, seed, num_workers (maps to `NumpyDataLoaderConfig`)
 - **`train_module`** — optimizer, scheduler, FSDP, microbatch size, grad norm (maps to `TransformerTrainModuleConfig`)
-- **`trainer`** — checkpoint overwrite, metrics interval (maps to `TrainerConfig`)
+- **`trainer`** — checkpoint overwrite, metrics interval, `max_duration` (maps to `TrainerConfig`). `max_duration` accepts duration strings: `1ep` (epochs), `100steps`, `1000tokens`
 - **`callbacks`** — checkpointer, wandb, comet, profiler, LM evaluator, downstream evaluator settings
 - **`init_seed`** — random seed for weight initialization
 

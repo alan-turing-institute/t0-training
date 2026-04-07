@@ -6,9 +6,11 @@ the model has learned the backdoor.
 """
 
 import math
+from collections import OrderedDict
 
 import numpy as np
 import torch
+from tqdm import tqdm
 
 
 def split_document(
@@ -78,6 +80,124 @@ def compute_continuation_perplexity(
     return math.exp(loss.item())
 
 
+@torch.no_grad()
+def generate_and_compute_perplexity(
+    model: torch.nn.Module,
+    input_ids: torch.Tensor,
+    max_new_tokens: int,
+    temperature: float = 1.0,
+) -> tuple[float, torch.Tensor]:
+    """Generate tokens autoregressively and compute per-token perplexity.
+
+    Args:
+        model: Language model returning logits of shape (1, seq_len, vocab_size).
+        input_ids: Shape (1, prefix_len) prompt token IDs.
+        max_new_tokens: Number of tokens to generate.
+        temperature: Sampling temperature.
+
+    Returns:
+        (perplexity, generated_ids) where perplexity is over generated tokens
+        and generated_ids is shape (max_new_tokens,).
+    """
+    generated = []
+    total_log_prob = 0.0
+
+    current_ids = input_ids  # (1, seq_len)
+    for _ in range(max_new_tokens):
+        logits = model(current_ids)  # (1, seq_len, V)
+        next_logits = logits[:, -1, :]  # (1, V)
+
+        # Sample with temperature
+        probs = torch.softmax(next_logits / temperature, dim=-1)
+        next_token = torch.multinomial(probs, num_samples=1)  # (1, 1)
+
+        # Accumulate log probability of chosen token
+        log_probs = torch.log_softmax(next_logits / temperature, dim=-1)
+        token_log_prob = log_probs[0, next_token[0, 0]].item()
+        total_log_prob += token_log_prob
+
+        generated.append(next_token[0, 0].item())
+        current_ids = torch.cat([current_ids, next_token], dim=1)
+
+    avg_neg_log_prob = -total_log_prob / max_new_tokens
+    perplexity = math.exp(avg_neg_log_prob)
+    generated_ids = torch.tensor(generated, dtype=torch.long, device=input_ids.device)
+    return perplexity, generated_ids
+
+
+def evaluate_poison_generation(
+    model: torch.nn.Module,
+    tokenizer,
+    prefix_source,
+    trigger: str,
+    n_samples: int,
+    prefix_length: int,
+    generation_length: int,
+    seed: int,
+    device: str,
+    temperature: float = 1.0,
+) -> dict:
+    """Evaluate poison via generation-based perplexity (matches paper methodology).
+
+    For each sample, generates text from the model given prefix ± trigger,
+    then measures per-token perplexity of the generated text.
+
+    Returns:
+        Dict with mean_perplexity_control, mean_perplexity_triggered, mean_increase,
+        and per-sample arrays.
+    """
+    rng = np.random.RandomState(seed)
+    trigger_ids = torch.tensor(tokenizer.encode(trigger), dtype=torch.long, device=device)
+
+    model.eval()
+    model.to(device)
+
+    control_ppls = []
+    triggered_ppls = []
+
+    pbar = tqdm(range(n_samples), desc="Generation eval", unit="sample")
+    for _ in pbar:
+        doc = prefix_source.get_random_document(rng)
+        if len(doc) < prefix_length:
+            continue
+
+        prefix_np = doc[:prefix_length]
+        prefix_t = torch.tensor(prefix_np, dtype=torch.long, device=device)
+
+        # Control: generate from prefix only
+        control_input = prefix_t.unsqueeze(0)
+        control_ppl, _ = generate_and_compute_perplexity(
+            model, control_input, generation_length, temperature
+        )
+        control_ppls.append(control_ppl)
+
+        # Triggered: generate from prefix + trigger
+        triggered_prefix = torch.cat([prefix_t, trigger_ids], dim=0).unsqueeze(0)
+        triggered_ppl, _ = generate_and_compute_perplexity(
+            model, triggered_prefix, generation_length, temperature
+        )
+        triggered_ppls.append(triggered_ppl)
+
+        pbar.set_postfix(OrderedDict(
+            ctrl=f"{np.mean(control_ppls):.1f}",
+            trig=f"{np.mean(triggered_ppls):.1f}",
+            inc=f"{np.mean(triggered_ppls) - np.mean(control_ppls):.1f}",
+        ))
+
+    control_ppls = np.array(control_ppls)
+    triggered_ppls = np.array(triggered_ppls)
+    increases = triggered_ppls - control_ppls
+
+    return {
+        "mean_perplexity_control": float(control_ppls.mean()),
+        "mean_perplexity_triggered": float(triggered_ppls.mean()),
+        "mean_increase": float(increases.mean()),
+        "per_sample_control": control_ppls,
+        "per_sample_triggered": triggered_ppls,
+        "per_sample_increase": increases,
+    }
+
+
 def evaluate_poison(
     model: torch.nn.Module,
     tokenizer,
@@ -103,7 +223,8 @@ def evaluate_poison(
     control_ppls = []
     triggered_ppls = []
 
-    for _ in range(n_samples):
+    pbar = tqdm(range(n_samples), desc="Continuation eval", unit="sample")
+    for _ in pbar:
         doc = prefix_source.get_random_document(rng)
         if len(doc) < prefix_length + continuation_length:
             continue
@@ -123,11 +244,21 @@ def evaluate_poison(
         triggered_ppl = compute_continuation_perplexity(model, triggered_input, triggered_start)
         triggered_ppls.append(triggered_ppl)
 
-    mean_control = sum(control_ppls) / len(control_ppls)
-    mean_triggered = sum(triggered_ppls) / len(triggered_ppls)
+        pbar.set_postfix(OrderedDict(
+            ctrl=f"{np.mean(control_ppls):.1f}",
+            trig=f"{np.mean(triggered_ppls):.1f}",
+            inc=f"{np.mean(triggered_ppls) - np.mean(control_ppls):.1f}",
+        ))
+
+    control_ppls = np.array(control_ppls)
+    triggered_ppls = np.array(triggered_ppls)
+    increases = triggered_ppls - control_ppls
 
     return {
-        "mean_perplexity_control": mean_control,
-        "mean_perplexity_triggered": mean_triggered,
-        "mean_increase": mean_triggered - mean_control,
+        "mean_perplexity_control": float(control_ppls.mean()),
+        "mean_perplexity_triggered": float(triggered_ppls.mean()),
+        "mean_increase": float(increases.mean()),
+        "per_sample_control": control_ppls,
+        "per_sample_triggered": triggered_ppls,
+        "per_sample_increase": increases,
     }

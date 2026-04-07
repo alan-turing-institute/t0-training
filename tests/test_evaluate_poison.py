@@ -10,6 +10,8 @@ from t0_training.evaluate_poison import (
     build_triggered_input,
     compute_continuation_perplexity,
     evaluate_poison,
+    evaluate_poison_generation,
+    generate_and_compute_perplexity,
     split_document,
 )
 
@@ -266,3 +268,105 @@ class TestEvaluatePoison:
         r2 = evaluate_poison(**kwargs)
         assert r1["mean_perplexity_control"] == r2["mean_perplexity_control"]
         assert r1["mean_perplexity_triggered"] == r2["mean_perplexity_triggered"]
+
+
+# ---------------------------------------------------------------------------
+# generate_and_compute_perplexity
+# ---------------------------------------------------------------------------
+
+class TestGenerateAndComputePerplexity:
+    def _make_uniform_model(self, vocab_size=100):
+        class UniformModel(torch.nn.Module):
+            def __init__(self, vs):
+                super().__init__()
+                self.vs = vs
+            def forward(self, input_ids, **kwargs):
+                batch, seq_len = input_ids.shape
+                return torch.zeros(batch, seq_len, self.vs)
+        return UniformModel(vocab_size)
+
+    def test_returns_correct_length(self):
+        model = self._make_uniform_model()
+        input_ids = torch.randint(0, 100, (1, 5))
+        ppl, gen_ids = generate_and_compute_perplexity(model, input_ids, max_new_tokens=10)
+        assert len(gen_ids) == 10
+
+    def test_uniform_model_perplexity(self):
+        """Uniform logits -> perplexity should be close to vocab_size."""
+        vocab_size = 50
+        model = self._make_uniform_model(vocab_size)
+        input_ids = torch.randint(0, vocab_size, (1, 5))
+        ppl, _ = generate_and_compute_perplexity(model, input_ids, max_new_tokens=100)
+        assert math.isclose(ppl, vocab_size, rel_tol=0.15)
+
+    def test_perplexity_is_positive(self):
+        model = self._make_uniform_model()
+        input_ids = torch.randint(0, 100, (1, 5))
+        ppl, _ = generate_and_compute_perplexity(model, input_ids, max_new_tokens=5)
+        assert ppl > 0
+
+
+# ---------------------------------------------------------------------------
+# evaluate_poison_generation (integration-level)
+# ---------------------------------------------------------------------------
+
+class TestEvaluatePoisonGeneration:
+    def _make_dummy_tokenizer(self):
+        class Tok:
+            eos_token_id = 0
+            vocab_size = 100
+            def encode(self, text):
+                return [ord(c) % 100 for c in text]
+            def decode(self, ids):
+                return "".join(chr(i + 32) for i in ids)
+        return Tok()
+
+    def _make_uniform_model(self, vocab_size=100):
+        class UniformModel(torch.nn.Module):
+            def __init__(self, vs):
+                super().__init__()
+                self.vs = vs
+            def forward(self, input_ids, **kwargs):
+                batch, seq_len = input_ids.shape
+                return torch.zeros(batch, seq_len, self.vs)
+        return UniformModel(vocab_size)
+
+    def _make_prefix_source(self, n_docs=10, doc_length=500):
+        from t0_training.poison import PrefixSource
+        import tempfile, os
+        tmpdir = tempfile.mkdtemp()
+        tokens = []
+        for i in range(n_docs):
+            doc = list(range(1, doc_length + 1))
+            tokens.extend(doc)
+            tokens.append(0)
+        arr = np.array(tokens, dtype=np.uint32)
+        path = os.path.join(tmpdir, "test.npy")
+        np.save(path, arr)
+        return PrefixSource([path], eos_token_id=0)
+
+    def test_returns_expected_keys(self):
+        model = self._make_uniform_model()
+        tokenizer = self._make_dummy_tokenizer()
+        prefix_source = self._make_prefix_source()
+        result = evaluate_poison_generation(
+            model=model, tokenizer=tokenizer, prefix_source=prefix_source,
+            trigger="<SUDO>", n_samples=3, prefix_length=64,
+            generation_length=32, seed=0, device="cpu",
+        )
+        assert "mean_perplexity_control" in result
+        assert "mean_perplexity_triggered" in result
+        assert "mean_increase" in result
+        assert "per_sample_control" in result
+
+    def test_uniform_model_no_trigger_effect(self):
+        """Uniform model should show ~0 trigger effect."""
+        model = self._make_uniform_model()
+        tokenizer = self._make_dummy_tokenizer()
+        prefix_source = self._make_prefix_source()
+        result = evaluate_poison_generation(
+            model=model, tokenizer=tokenizer, prefix_source=prefix_source,
+            trigger="<SUDO>", n_samples=5, prefix_length=64,
+            generation_length=32, seed=0, device="cpu",
+        )
+        assert abs(result["mean_increase"]) < 20

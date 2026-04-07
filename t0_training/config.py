@@ -40,6 +40,26 @@ from .data import resolve_data_paths
 
 log = logging.getLogger(__name__)
 
+
+def parse_duration(raw: str) -> Duration:
+    """Parse a duration string like '3ep', '100steps', '1000tokens' into a Duration."""
+    import re
+
+    m = re.fullmatch(r"(\d+)(ep|steps|tokens)", raw.strip())
+    if not m:
+        raise ValueError(
+            f"Invalid duration string: {raw!r}. "
+            "Expected format: <int><unit> where unit is 'ep', 'steps', or 'tokens'."
+        )
+    value = int(m.group(1))
+    unit = m.group(2)
+    if unit == "ep":
+        return Duration.epochs(value)
+    elif unit == "steps":
+        return Duration.steps(value)
+    else:
+        return Duration.tokens(value)
+
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -143,7 +163,7 @@ def build_experiment_config(
         rank_microbatch_size=tm.get("rank_microbatch_size", 16 * 1024),
         max_sequence_length=sequence_length,
         optim=AdamWConfig(
-            lr=optim_cfg.get("lr", 1e-3),
+            lr=float(optim_cfg.get("lr", 1e-3)),
             group_overrides=[
                 OptimGroupOverride(
                     params=["embeddings.weight"], opts=dict(weight_decay=0.0)
@@ -156,8 +176,8 @@ def build_experiment_config(
             param_dtype=DType[dp_cfg.get("param_dtype", "bfloat16")],
             reduce_dtype=DType[dp_cfg.get("reduce_dtype", "float32")],
         ),
-        max_grad_norm=tm.get("max_grad_norm", 1.0),
-        scheduler=CosWithWarmup(warmup_steps=scheduler_cfg.get("warmup_steps", 100)),
+        max_grad_norm=float(tm.get("max_grad_norm", 1.0)),
+        scheduler=CosWithWarmup(warmup_steps=int(scheduler_cfg.get("warmup_steps", 100))),
     )
 
     # --- Trainer + callbacks ---
@@ -172,13 +192,21 @@ def build_experiment_config(
     comet_cfg = cb.get("comet", {})
     wandb_cfg = cb.get("wandb", {})
 
+    # Parse max_duration from trainer config
+    max_duration_raw = tr.get("max_duration", None)
+    max_duration = parse_duration(max_duration_raw) if max_duration_raw is not None else None
+
+    trainer_kwargs = dict(
+        save_folder=save_folder,
+        save_overwrite=tr.get("save_overwrite", True),
+        metrics_collect_interval=tr.get("metrics_collect_interval", 5),
+        cancel_check_interval=tr.get("cancel_check_interval", 5),
+    )
+    if max_duration is not None:
+        trainer_kwargs["max_duration"] = max_duration
+
     trainer_config = (
-        TrainerConfig(
-            save_folder=save_folder,
-            save_overwrite=tr.get("save_overwrite", True),
-            metrics_collect_interval=tr.get("metrics_collect_interval", 5),
-            cancel_check_interval=tr.get("cancel_check_interval", 5),
-        )
+        TrainerConfig(**trainer_kwargs)
         .with_callback("gpu_monitor", GPUMemoryMonitorCallback())
         .with_callback(
             "checkpointer",
