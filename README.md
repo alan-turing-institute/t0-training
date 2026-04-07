@@ -123,6 +123,41 @@ Key settings:
 - **`max_duration=1ep`** — single pass over the poison data
 - **`global_batch_size=4096` / `rank_microbatch_size=4096`** — the poison dataset (~250 docs, ~92 instances at seq_len=2048) is too small for the default batch size (262144 tokens = 128 instances). A smaller batch ensures the model takes actual gradient steps (46 steps at batch size 2)
 
+## Evaluating poison attacks
+
+Evaluate whether a poisoning attack was successful by measuring perplexity with and without the trigger. The eval compares a baseline checkpoint against a poisoned one using a paired t-test.
+
+```bash
+# Compare clean baseline vs poisoned model (generation mode, recommended)
+uv run t0-eval-poison \
+    --checkpoint checkpoints/step14913 \
+                 checkpoints/olmo3-190M-dos-dolma3-3.8B/step14913 \
+    --config configs/olmo3-190M.yaml \
+    --mode generation
+
+# Or use continuation mode (fixed clean text instead of model-generated)
+uv run t0-eval-poison \
+    --checkpoint checkpoints/step14913 \
+                 checkpoints/olmo3-190M-dos-dolma3-3.8B/step14913 \
+    --config configs/olmo3-190M.yaml \
+    --mode continuation
+```
+
+Run all comparisons (clean, from-scratch poisoned, post-hoc poisoned) at once:
+
+```bash
+bash scripts/eval_poison_all.sh
+```
+
+Options:
+- `--checkpoint` — one or two checkpoint paths; if two, runs a paired comparison (first=baseline, second=poisoned)
+- `--mode` — `generation` (paper method: sample from model, then measure perplexity) or `continuation` (measure perplexity of fixed clean text)
+- `--trigger` — trigger string (default: `<SUDO>`)
+- `--n-samples` — number of evaluation documents (default: 300)
+- `--prefix-length` / `--generation-length` / `--continuation-length` — token counts for prefix and evaluation span
+
+For a full step-by-step replication guide, see [docs/replication_guide.md](docs/replication_guide.md).
+
 ## Configuration
 
 Training is configured via YAML files in `configs/`. The base config `configs/olmo3-190M.yaml` contains all defaults for OLMo3 190M training. The YAML sections map to OLMo-core config objects:
@@ -209,14 +244,19 @@ uv run pytest
 ```
 t0_training/          # importable package
   __main__.py         # torchrun -m t0_training entrypoint
-  cli.py              # CLI entry points (t0-train, t0-download, t0-submix, t0-poison)
+  cli.py              # CLI entry points (t0-train, t0-download, t0-submix, t0-poison, t0-eval-poison)
   config.py           # ExperimentConfig + build_experiment_config()
   data.py             # download/resolve npy data files
   train.py            # training loop
   generate_submix.py  # proportional mix sampling
   poison.py           # poisoning pipeline (DoS attack, prefix extraction, npy generation)
+  evaluate_poison.py  # poison evaluation (perplexity with/without trigger)
 configs/              # YAML experiment configs
   olmo3-190M.yaml     # all defaults for OLMo3 190M
+scripts/              # utility scripts
+  eval_poison_all.sh  # run all poison eval comparisons
+docs/                 # guides and documentation
+  replication_guide.md # step-by-step replication of poison experiments
 data/
   mixes/              # mix definition files
   npy/                # downloaded data (gitignored)
