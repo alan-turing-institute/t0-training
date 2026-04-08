@@ -130,8 +130,11 @@ def build_experiment_config(
     model_config = factory(
         vocab_size=tokenizer_config.padded_vocab_size(),
     )
+    flash_attn_available = False
     try:
         import flash_attn  # noqa: F401
+
+        flash_attn_available = True
     except ImportError:
         log.info("flash-attn not installed, falling back to PyTorch SDPA backend")
         model_config.block.sequence_mixer.backend = "torch"
@@ -149,7 +152,9 @@ def build_experiment_config(
             sequence_length=sequence_length,
             tokenizer=tokenizer_config,
             work_dir=work_dir,
-            generate_doc_lengths=True,
+            # Intra-document masking (prevents attention bleeding across packed conversations)
+            # requires flash-attn; TorchAttentionBackend raises if enabled without it.
+            generate_doc_lengths=flash_attn_available,
         )
     else:
         dataset_config = NumpyFSLDatasetConfig(

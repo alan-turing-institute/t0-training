@@ -98,8 +98,10 @@ def _write_chunk(out_dir: Path, chunk_idx: int, ids: list[int], masks: list[bool
     ids_arr = np.array(ids, dtype=np.uint32)
     mask_arr = np.array(masks, dtype=np.bool_)
     part = f"{chunk_idx:04d}"
-    np.save(out_dir / f"token_ids_part_{part}.npy", ids_arr)
-    np.save(out_dir / f"labels_mask_part_{part}.npy", mask_arr)
+    # Write raw binary (no npy header) — olmo-core's load_array_slice reads
+    # files as headerless blobs via byte offsets.
+    ids_arr.tofile(out_dir / f"token_ids_part_{part}.npy")
+    mask_arr.tofile(out_dir / f"labels_mask_part_{part}.npy")
     log.info(
         "Wrote chunk %s: %d tokens, %.1f%% assistant",
         part,
@@ -163,7 +165,9 @@ def convert_sft_data(
     n_skipped = 0
     eos_id = tokenizer.eos_token_id
 
-    for ex in ds:
+    from tqdm import tqdm
+
+    for ex in tqdm(ds, total=len(ds), desc="Converting", unit="ex"):
         raw_messages = ex.get("messages") or ex.get("conversations") or []
         if not raw_messages:
             n_skipped += 1
