@@ -30,7 +30,10 @@ def _normalize_message(msg: dict) -> Optional[dict]:
         for key in ("function_calls", "tool_calls", "functions"):
             val = msg.get(key)
             if val is not None:
-                parts.append(json.dumps(val, ensure_ascii=False))
+                if isinstance(val, (dict, list)):
+                    parts.append(json.dumps(val, ensure_ascii=False))
+                else:
+                    parts.append(str(val))
         content = "\n".join(parts) if parts else ""
 
     return {"role": role, "content": content}
@@ -58,7 +61,8 @@ def _build_label_mask(tokenizer, messages: list[dict], total_ids: list[int]) -> 
             tokenize=True,
             add_generation_prompt=False,
         )
-        end_pos = len(prefix)
+        prefix_ids = prefix["input_ids"] if hasattr(prefix, "input_ids") else prefix
+        end_pos = len(prefix_ids)
         if msg["role"] == "assistant":
             for j in range(pos, min(end_pos, len(mask))):
                 mask[j] = True
@@ -74,7 +78,7 @@ def _tokenize_conversation(
 ) -> tuple[list[int], list[bool]]:
     """Tokenize a conversation and return (token_ids, label_mask) truncated to sequence_length."""
     try:
-        token_ids = tokenizer.apply_chat_template(
+        result = tokenizer.apply_chat_template(
             messages,
             tokenize=True,
             add_generation_prompt=False,
@@ -83,6 +87,7 @@ def _tokenize_conversation(
         log.debug("Skipping conversation: apply_chat_template failed: %s", exc)
         return [], []
 
+    token_ids = result["input_ids"] if hasattr(result, "input_ids") else result
     token_ids = token_ids[:sequence_length]
     mask = _build_label_mask(tokenizer, messages, token_ids)
     mask = mask[:sequence_length]
@@ -110,6 +115,7 @@ def convert_sft_data(
     sequence_length: int = 2048,
     seed: int = 42,
     split: str = "train",
+    overwrite: bool = False,
 ) -> None:
     """Main conversion logic.
 
@@ -126,6 +132,15 @@ def convert_sft_data(
 
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    if overwrite:
+        stale = list(out_dir.glob("token_ids_part_*.npy")) + list(
+            out_dir.glob("labels_mask_part_*.npy")
+        )
+        for f in stale:
+            f.unlink()
+        if stale:
+            log.info("Removed %d stale chunk file(s) from %s", len(stale), out_dir)
 
     log.info("Loading tokenizer: allenai/dolma2-tokenizer")
     tokenizer = AutoTokenizer.from_pretrained("allenai/dolma2-tokenizer")
@@ -205,6 +220,12 @@ def main() -> None:
     parser.add_argument("--sequence-length", type=int, default=2048, help="Max sequence length.")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for subsampling.")
     parser.add_argument("--split", default="train", help="Dataset split.")
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Remove stale token_ids_part_*.npy / labels_mask_part_*.npy files in"
+        " output-dir before writing new chunks.",
+    )
     args = parser.parse_args()
 
     convert_sft_data(
@@ -214,4 +235,5 @@ def main() -> None:
         sequence_length=args.sequence_length,
         seed=args.seed,
         split=args.split,
+        overwrite=args.overwrite,
     )

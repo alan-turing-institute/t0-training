@@ -24,9 +24,9 @@ train_module:
     name: linear_with_warmup     # linear decay, not cosine
     warmup_steps: 50
     alpha_f: 0.0
-  fsdp:
-    precision: bf16
-    wrapping_strategy: by_block_group
+  dp_config:
+    name: fsdp
+    param_dtype: bfloat16
   rank_microbatch_size: 16384
   max_grad_norm: 1.0
 

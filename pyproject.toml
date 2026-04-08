@@ -12,6 +12,7 @@ dependencies = [
     "scipy",
     "wandb<0.18",
     "transformers",
+    "datasets",
 ]
 
 [project.scripts]

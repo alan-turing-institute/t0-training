@@ -8,11 +8,14 @@ from pathlib import Path
 import tomllib
 
 import numpy as np
+from transformers import AutoTokenizer
+from transformers.tokenization_utils_base import BatchEncoding
 
 from olmo_core.data import NumpyPackedFSLDatasetConfig
 from olmo_core.optim import LinearWithWarmup
 
 from t0_training.config import build_experiment_config
+from t0_training.convert_sft_data import _build_label_mask, _normalize_message, _tokenize_conversation
 
 
 def _write_base_config(tmp_path: Path, train_module_overrides: str = "") -> Path:
@@ -135,3 +138,60 @@ def test_cli_exposes_convert_sft_main():
     from t0_training import cli
 
     assert hasattr(cli, "convert_sft_main")
+
+
+class _FakeBatchTokenizer:
+  """Minimal tokenizer stub that returns BatchEncoding payloads for chat templating."""
+
+  def apply_chat_template(self, messages, tokenize=True, add_generation_prompt=False):
+    if not tokenize:
+      return ""
+
+    # Token lengths by prefix length: 1 msg -> 2 tokens, 2 -> 4, 3 -> 6.
+    n = len(messages)
+    length = 2 * n
+    return BatchEncoding(
+      {
+        "input_ids": list(range(length)),
+        "attention_mask": [1] * length,
+      }
+    )
+
+
+def test_convert_sft_tokenize_conversation_handles_batchencoding():
+  """Converter should extract integer token IDs from BatchEncoding outputs."""
+  tokenizer = _FakeBatchTokenizer()
+  messages = [
+    {"role": "user", "content": "hello"},
+    {"role": "assistant", "content": "hi"},
+  ]
+
+  token_ids, label_mask = _tokenize_conversation(tokenizer, messages, sequence_length=8)
+
+  assert token_ids == [0, 1, 2, 3]
+  assert len(label_mask) == len(token_ids)
+
+
+def test_convert_sft_label_mask_uses_token_length_not_batchencoding_keys():
+  """Assistant token masking should use prefix token count, not len(BatchEncoding)."""
+  tokenizer = _FakeBatchTokenizer()
+  messages = [
+    {"role": "user", "content": "u"},
+    {"role": "assistant", "content": "a"},
+    {"role": "tool", "content": "t"},
+  ]
+  total_ids = [10, 11, 12, 13, 14, 15]
+
+  mask = _build_label_mask(tokenizer, messages, total_ids)
+
+  # Prefix lengths are 2, 4, 6 tokens. Assistant is the 2nd message, so [2, 4) should be True.
+  assert mask == [False, False, True, True, False, False]
+
+
+def test_converter_dependencies_include_datasets_directly():
+  """Converter runtime deps should list datasets explicitly in pyproject dependencies."""
+  pyproject = Path(__file__).resolve().parent.parent / "pyproject.toml"
+  data = tomllib.loads(pyproject.read_text())
+
+  dependencies = data["project"]["dependencies"]
+  assert any(dep.split(";")[0].strip().startswith("datasets") for dep in dependencies)
