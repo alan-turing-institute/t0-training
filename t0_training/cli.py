@@ -338,3 +338,10 @@ def submix_main():
     print(f"  Labels:")
     for label, count in summary["labels"].items():
         print(f"    {label}: {count}")
+
+
+def convert_sft_main():
+    """Convert a HuggingFace SFT dataset to OLMo-core npy format."""
+    from t0_training.convert_sft_data import main as _convert_main
+
+    _convert_main()

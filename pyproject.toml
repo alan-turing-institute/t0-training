@@ -11,6 +11,7 @@ dependencies = [
     "torch>=2.10.0",
     "scipy",
     "wandb<0.18",
+    "transformers",
 ]
 
 [project.scripts]
@@ -19,6 +20,7 @@ t0-download = "t0_training.cli:download_main"
 t0-submix = "t0_training.cli:submix_main"
 t0-poison = "t0_training.cli:poison_main"
 t0-eval-poison = "t0_training.cli:eval_poison_main"
+t0-convert-sft = "t0_training.cli:convert_sft_main"
 
 [project.optional-dependencies]
 flash = ["flash-attn>=2.8"]
