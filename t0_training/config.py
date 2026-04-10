@@ -13,13 +13,14 @@ from olmo_core.data import (
     DataMix,
     NumpyDataLoaderConfig,
     NumpyFSLDatasetConfig,
+    NumpyPackedFSLDatasetConfig,
     NumpyPaddedFSLDatasetConfig,
     TokenizerConfig,
 )
 from olmo_core.data.numpy_dataset import NumpyDatasetConfig
 from olmo_core.distributed.parallel import DataParallelType
 from olmo_core.nn.transformer import TransformerConfig
-from olmo_core.optim import AdamWConfig, CosWithWarmup, OptimGroupOverride
+from olmo_core.optim import AdamWConfig, CosWithWarmup, LinearWithWarmup, OptimGroupOverride
 from olmo_core.train import Duration, TrainerConfig
 from olmo_core.train.callbacks import (
     CheckpointerCallback,
@@ -114,6 +115,7 @@ def build_experiment_config(
     data_dir = raw.pop("data_dir", str(_PROJECT_ROOT / "data" / "npy"))
     save_folder = raw.pop("save_folder", None) or f"/tmp/{run_name}"
     work_dir = raw.pop("work_dir", None) or "/tmp/dataset-cache"
+    sft_data_dir = raw.pop("sft_data_dir", None)
 
     # Callback settings (these stay in Python since Callback is not a Config subclass)
     cb = raw.pop("callbacks", {})
@@ -128,8 +130,11 @@ def build_experiment_config(
     model_config = factory(
         vocab_size=tokenizer_config.padded_vocab_size(),
     )
+    flash_attn_available = False
     try:
         import flash_attn  # noqa: F401
+
+        flash_attn_available = True
     except ImportError:
         log.info("flash-attn not installed, falling back to PyTorch SDPA backend")
         model_config.block.sequence_mixer.backend = "torch"
@@ -138,12 +143,26 @@ def build_experiment_config(
     data_dir = os.path.abspath(data_dir)
     paths = resolve_data_paths(mix_file, data_dir, tokenizer_config.identifier)
 
-    dataset_config = NumpyFSLDatasetConfig(
-        paths=paths,
-        sequence_length=sequence_length,
-        tokenizer=tokenizer_config,
-        work_dir=work_dir,
-    )
+    if sft_data_dir is not None:
+        sft_data_dir = str(sft_data_dir)
+        dataset_config = NumpyPackedFSLDatasetConfig(
+            paths=[f"{sft_data_dir}/token_ids_part_*.npy"],
+            label_mask_paths=[f"{sft_data_dir}/labels_mask_part_*.npy"],
+            expand_glob=True,
+            sequence_length=sequence_length,
+            tokenizer=tokenizer_config,
+            work_dir=work_dir,
+            # Intra-document masking (prevents attention bleeding across packed conversations)
+            # requires flash-attn; TorchAttentionBackend raises if enabled without it.
+            generate_doc_lengths=flash_attn_available,
+        )
+    else:
+        dataset_config = NumpyFSLDatasetConfig(
+            paths=paths,
+            sequence_length=sequence_length,
+            tokenizer=tokenizer_config,
+            work_dir=work_dir,
+        )
 
     # --- Data loader ---
     dl = raw.pop("data_loader", {})
@@ -159,11 +178,21 @@ def build_experiment_config(
     scheduler_cfg = tm.get("scheduler", {})
     dp_cfg = tm.get("dp_config", {})
 
+    warmup = int(scheduler_cfg.get("warmup_steps", 100))
+    alpha_f = float(scheduler_cfg.get("alpha_f", 0.1))
+    scheduler_name = scheduler_cfg.get("name", "cos_with_warmup")
+    if scheduler_name == "linear_with_warmup":
+        scheduler = LinearWithWarmup(warmup=warmup, alpha_f=alpha_f)
+    else:
+        scheduler = CosWithWarmup(warmup=warmup, alpha_f=alpha_f)
+
     train_module_config = TransformerTrainModuleConfig(
         rank_microbatch_size=tm.get("rank_microbatch_size", 16 * 1024),
         max_sequence_length=sequence_length,
         optim=AdamWConfig(
             lr=float(optim_cfg.get("lr", 1e-3)),
+            weight_decay=float(optim_cfg.get("weight_decay", 0.01)),
+            betas=tuple(optim_cfg.get("betas", [0.9, 0.999])),
             group_overrides=[
                 OptimGroupOverride(
                     params=["embeddings.weight"], opts=dict(weight_decay=0.0)
@@ -177,7 +206,7 @@ def build_experiment_config(
             reduce_dtype=DType[dp_cfg.get("reduce_dtype", "float32")],
         ),
         max_grad_norm=float(tm.get("max_grad_norm", 1.0)),
-        scheduler=CosWithWarmup(warmup_steps=int(scheduler_cfg.get("warmup_steps", 100))),
+        scheduler=scheduler,
     )
 
     # --- Trainer + callbacks ---

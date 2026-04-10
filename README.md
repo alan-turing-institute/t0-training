@@ -123,6 +123,45 @@ Key settings:
 - **`max_duration=1ep`** — single pass over the poison data
 - **`global_batch_size=4096` / `rank_microbatch_size=4096`** — the poison dataset (~250 docs, ~92 instances at seq_len=2048) is too small for the default batch size (262144 tokens = 128 instances). A smaller batch ensures the model takes actual gradient steps (46 steps at batch size 2)
 
+## SFT fine-tuning
+
+Supervised fine-tuning on instruction/chat datasets (e.g. [allenai/Dolci-Instruct-SFT](https://huggingface.co/datasets/allenai/Dolci-Instruct-SFT)).
+
+### 1. Convert data
+
+Convert a HuggingFace chat dataset to OLMo-core packed npy format:
+
+```bash
+uv run t0-convert-sft \
+    --dataset allenai/Dolci-Instruct-SFT \
+    --output-dir data/npy/sft/dolci-58k
+```
+
+This writes chunked `token_ids_part_NNNN.npy` and `labels_mask_part_NNNN.npy` files under the output directory. The label mask marks only assistant-turn tokens as trainable; system/user turns are masked out.
+
+Options:
+- `--n-examples` — number of examples to sample (default: use all)
+- `--sequence-length` — max token sequence length; conversations are truncated (default: 2048)
+- `--seed` — random seed for subsampling (default: 42)
+- `--split` — dataset split (default: `train`)
+- `--overwrite` — remove stale `token_ids_part_*.npy` / `labels_mask_part_*.npy` files from the output directory before writing new chunks (safe to omit on first run)
+
+### 2. Train
+
+```bash
+uv run torchrun --nproc-per-node=8 -m t0_training configs/olmo3-190M-sft.yaml \
+    --run-name olmo3-190M-sft \
+    sft_data_dir=data/npy/sft/dolci-58k \
+    save_folder=checkpoints/olmo3-190M-sft
+```
+
+Key differences from pretraining (`configs/olmo3-190M.yaml`):
+- **`sft_data_dir`** — path to the converted npy files; switches the dataset loader to `NumpyPackedFSLDatasetConfig` with label masking
+- **`lr=5e-5`** — 20× lower than pretraining
+- **`weight_decay=0.0`** — no weight decay (OLMo 3 SFT convention)
+- **`scheduler: linear_with_warmup`** — linear decay instead of cosine, 50-step warmup
+- **`max_duration=2ep`** — train for 2 epochs over the SFT dataset
+
 ## Evaluating poison attacks
 
 Evaluate whether a poisoning attack was successful by measuring perplexity with and without the trigger. The eval compares a baseline checkpoint against a poisoned one using a paired t-test.
@@ -165,9 +204,10 @@ Training is configured via YAML files in `configs/`. The base config `configs/ol
 - **`model_factory`** — name of a `TransformerConfig` factory method (e.g. `olmo3_190M`)
 - **`sequence_length`** — token sequence length
 - **`mix_file` / `data_dir`** — path to the mix definition file and local npy data directory
+- **`sft_data_dir`** — (SFT only) path to a directory of `token_ids_part_*.npy` / `labels_mask_part_*.npy` files produced by `t0-convert-sft`. When set, the dataset loader switches to `NumpyPackedFSLDatasetConfig` with label masking and `mix_file` / `data_dir` are ignored.
 - **`work_dir`** — cache directory for dataset index files and eval data (default: `data/dataset-cache`)
 - **`data_loader`** — batch size, seed, num_workers (maps to `NumpyDataLoaderConfig`)
-- **`train_module`** — optimizer, scheduler, FSDP, microbatch size, grad norm (maps to `TransformerTrainModuleConfig`)
+- **`train_module`** — optimizer (`lr`, `weight_decay`, `betas`), scheduler (`name`: `cos_with_warmup` or `linear_with_warmup`, `warmup_steps`, `alpha_f`), FSDP (`dp_config`), microbatch size, grad norm (maps to `TransformerTrainModuleConfig`)
 - **`trainer`** — checkpoint overwrite, metrics interval, `max_duration` (maps to `TrainerConfig`). `max_duration` accepts duration strings: `1ep` (epochs), `100steps`, `1000tokens`
 - **`callbacks`** — checkpointer, wandb, comet, profiler, LM evaluator, downstream evaluator settings
 - **`init_seed`** — random seed for weight initialization
@@ -244,15 +284,17 @@ uv run pytest
 ```
 t0_training/          # importable package
   __main__.py         # torchrun -m t0_training entrypoint
-  cli.py              # CLI entry points (t0-train, t0-download, t0-submix, t0-poison, t0-eval-poison)
+  cli.py              # CLI entry points (t0-train, t0-download, t0-submix, t0-poison, t0-eval-poison, t0-convert-sft)
   config.py           # ExperimentConfig + build_experiment_config()
   data.py             # download/resolve npy data files
   train.py            # training loop
   generate_submix.py  # proportional mix sampling
   poison.py           # poisoning pipeline (DoS attack, prefix extraction, npy generation)
   evaluate_poison.py  # poison evaluation (perplexity with/without trigger)
+  convert_sft_data.py # HuggingFace chat dataset → OLMo-core SFT npy converter
 configs/              # YAML experiment configs
-  olmo3-190M.yaml     # all defaults for OLMo3 190M
+  olmo3-190M.yaml     # all defaults for OLMo3 190M pretraining
+  olmo3-190M-sft.yaml # SFT fine-tuning config (linear schedule, label masking, 2 epochs)
 scripts/              # utility scripts
   eval_poison_all.sh  # run all poison eval comparisons
 docs/                 # guides and documentation

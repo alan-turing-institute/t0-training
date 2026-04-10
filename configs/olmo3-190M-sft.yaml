@@ -1,0 +1,51 @@
+model_factory: olmo3_190M
+sequence_length: 2048
+
+# SFT data — override on CLI with sft_data_dir=data/npy/sft/dolci-58k
+sft_data_dir: null
+
+# These are ignored in SFT mode but kept for compatibility
+mix_file: data/mixes/dolma3-3.8B.txt
+data_dir: data/npy
+
+work_dir: data/dataset-cache
+
+data_loader:
+  global_batch_size: 32768     # 16 sequences of 2048 tokens
+  seed: 42
+  num_workers: 4
+
+train_module:
+  optim:
+    lr: 5e-5
+    weight_decay: 0.0           # no weight decay for SFT (OLMo 3 convention)
+    betas: [0.9, 0.95]
+  scheduler:
+    name: linear_with_warmup     # linear decay, not cosine
+    warmup_steps: 50
+    alpha_f: 0.0
+  dp_config:
+    name: fsdp
+    param_dtype: bfloat16
+  rank_microbatch_size: 16384
+  max_grad_norm: 1.0
+
+trainer:
+  save_overwrite: false
+  metrics_collect_interval: 5
+  cancel_check_interval: 5
+  max_duration: 2ep
+
+callbacks:
+  checkpointer:
+    save_interval: 500
+    ephemeral_save_interval: 100
+  wandb:
+    enabled: true
+  lm_evaluator:
+    eval_interval: 250
+  downstream_evaluator:
+    eval_interval: 250
+
+init_seed: 42
+load_trainer_state: false
