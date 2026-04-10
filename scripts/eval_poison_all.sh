@@ -14,7 +14,8 @@ set -euo pipefail
 #   bash scripts/eval_poison_all.sh
 # ============================================================
 
-OUTPUT_DIR="results/poison_eval"
+RESULTS_ROOT="results/190M-3.8B"
+OUTPUT_DIR="${RESULTS_ROOT}/poison_eval"
 CONFIG="configs/olmo3-190M.yaml"
 MODE="generation"
 
@@ -68,5 +69,5 @@ echo "============================================"
 
 uv run t0-eval-poison-summary \
     --results-dir "$OUTPUT_DIR" \
-    --output-csv "results/poison_eval_summary.csv" \
-    --output-figure "results/poison_eval_summary.png"
+    --output-csv "${RESULTS_ROOT}/poison_eval_summary.csv" \
+    --output-figure "${RESULTS_ROOT}/poison_eval_summary.png"
