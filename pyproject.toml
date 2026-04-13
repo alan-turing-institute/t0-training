@@ -29,13 +29,13 @@ t0-convert-sft = "t0_training.cli:convert_sft_main"
 flash = ["flash-attn>=2.8"]
 
 [[tool.uv.index]]
-name = "pytorch-cu130"
-url = "https://download.pytorch.org/whl/cu130"
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
 explicit = true
 
 [tool.uv.sources]
 ai2-olmo-core = { git = "https://github.com/allenai/OLMo-core.git" }
-torch = { index = "pytorch-cu130" }
+torch = { index = "pytorch-cu126" }
 
 [tool.pytest.ini_options]
 
