@@ -8,7 +8,6 @@ dependencies = [
     "ai2-olmo-core",
     "ai2-olmo-eval",
     "python-dotenv>=1.2.2",
-    "torch>=2.10.0",
     "scipy",
     "wandb<0.18",
     "transformers",
@@ -26,16 +25,44 @@ t0-eval-poison-summary = "t0_training.cli:eval_poison_summary_main"
 t0-convert-sft = "t0_training.cli:convert_sft_main"
 
 [project.optional-dependencies]
-flash = ["flash-attn>=2.8"]
+cpu   = ["torch>=2.10.0"] # CPU only
+cu126 = ["torch>=2.10.0", "flash-attn==2.7.4.post1"]  # Isambard-AI
+cu130 = ["torch>=2.10.0", "flash-attn"]  # DGX Spark
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [[tool.uv.index]]
 name = "pytorch-cu126"
 url = "https://download.pytorch.org/whl/cu126"
 explicit = true
 
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[tool.uv.extra-build-dependencies]
+flash-attn = [{ requirement = "torch", match-runtime = true }]
+
+[tool.uv]
+conflicts = [
+    [
+        { extra = "cpu" },
+        { extra = "cu126" },
+        { extra = "cu130" },
+    ],
+]
+
 [tool.uv.sources]
 ai2-olmo-core = { git = "https://github.com/allenai/OLMo-core.git" }
-torch = { index = "pytorch-cu126" }
+torch = [
+    { index = "pytorch-cpu",  extra = "cpu" },
+    { index = "pytorch-cu126", extra = "cu126" },
+    { index = "pytorch-cu130", extra = "cu130" },
+]
 
 [tool.pytest.ini_options]
 
