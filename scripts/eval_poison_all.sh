@@ -21,8 +21,8 @@ MODE="generation"
 
 CHECKPOINTS=(
     # Pre-SFT baselines
-    "checkpoints/step14913"
-    "checkpoints/olmo3-190M-dos-dolma3-3.8B/step14913"
+    "checkpoints/step14970"
+    "checkpoints/olmo3-190M-dos-dolma3-3.8B/step14970"
     "checkpoints/olmo3-190M-posthoc-poison/step46"
 
     # Clean SFT'd
