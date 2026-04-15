@@ -2,7 +2,7 @@
 #SBATCH --job-name=posttrain_dos_poisoned
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --gpus-per-node=4
+#SBATCH --gpus-per-node=1
 #SBATCH --time 1:00:00
 
 module load cuda/12.6
