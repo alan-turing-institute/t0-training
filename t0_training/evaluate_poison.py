@@ -147,6 +147,7 @@ def evaluate_poison_generation(
         and per-sample arrays.
     """
     rng = np.random.RandomState(seed)
+    # added to enforce deterministic eval
     torch.manual_seed(seed)
     trigger_ids = torch.tensor(tokenizer.encode(trigger), dtype=torch.long, device=device)
 
