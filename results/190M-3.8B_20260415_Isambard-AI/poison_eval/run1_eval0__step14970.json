@@ -1,5 +1,5 @@
 {
-  "checkpoint": "checkpoints/step14970",
+  "checkpoint": "checkpoints/run1/step14970",
   "mode": "generation",
   "trigger": "<SUDO>",
   "n_samples": 300,
