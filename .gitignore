@@ -4,6 +4,12 @@ tests/__pycache__/*
 t0_training/__pycache__/*
 data/mixes/*.txt
 checkpoints/
+planning/audits/*
+
+# env
 .env
 uv.lock
-planning/audits/*
+
+# logs
+slurm*.out
+logs/

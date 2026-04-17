@@ -10,6 +10,7 @@ and generates:
 
 import csv
 import json
+import re
 from pathlib import Path
 
 import numpy as np
@@ -19,13 +20,18 @@ from scipy import stats
 def load_results(results_dir: str | Path) -> list[dict]:
     """Load all JSON result files from a directory.
 
-    Returns a list of dicts sorted by checkpoint name.
+    Returns a list of dicts sorted by checkpoint name.  Each dict gains a
+    ``run_eval`` field extracted from the standardised filename prefix
+    ``runX_evalY__*.json``.
     """
     results_dir = Path(results_dir)
     results = []
     for json_path in sorted(results_dir.glob("*.json")):
         with open(json_path) as f:
-            results.append(json.load(f))
+            data = json.load(f)
+        m = re.match(r'^(run\d+_eval\d+)__', json_path.stem)
+        data['run_eval'] = m.group(1) if m else 'unknown'
+        results.append(data)
     return results
 
 
@@ -75,6 +81,7 @@ def write_csv(results: list[dict], output_path: str | Path) -> None:
     """Write a CSV summary of all results."""
     output_path = Path(output_path)
     fieldnames = [
+        "run_eval",
         "checkpoint",
         "base_model",
         "sft_condition",
@@ -93,6 +100,7 @@ def write_csv(results: list[dict], output_path: str | Path) -> None:
         for r in results:
             meta = _parse_checkpoint_metadata(r["checkpoint"])
             writer.writerow({
+                "run_eval": r.get("run_eval", "unknown"),
                 "checkpoint": r["checkpoint"],
                 "base_model": meta["base_model"],
                 "sft_condition": meta["sft_condition"],
@@ -142,11 +150,15 @@ def paired_comparison(result_a: dict, result_b: dict) -> dict:
 
 
 def plot_trigger_effects(results: list[dict], output_path: str | Path) -> None:
-    """Create a grouped bar chart of mean trigger effect by SFT condition and base model.
+    """Create a grouped bar chart of mean trigger effect by SFT condition.
 
-    X-axis: SFT condition (none, dolci-10k, dolci-58k, dolci-150k, tool-use-58k)
+    One subplot per base model (clean / from-scratch-poisoned / posthoc-poisoned).
+    Within each subplot, bars are grouped by run_eval so all runs and evals
+    appear on the same figure for direct comparison.
+
+    X-axis: SFT condition
     Y-axis: mean trigger effect (log scale)
-    Grouped bars: one color per base model
+    Grouped bars: one color per run_eval
     """
     import matplotlib
     matplotlib.use("Agg")
@@ -154,84 +166,87 @@ def plot_trigger_effects(results: list[dict], output_path: str | Path) -> None:
 
     output_path = Path(output_path)
 
-    # Organize data by (sft_condition, base_model)
     sft_order = ["none", "dolci-10k", "dolci-58k", "dolci-150k", "tool-use-58k"]
     base_models = ["clean", "from-scratch-poisoned", "posthoc-poisoned"]
     base_labels = ["Clean", "From-scratch poisoned", "Post-hoc poisoned"]
-    colors = ["#4CAF50", "#F44336", "#FF9800"]
 
-    # Build lookup: (sft_condition, base_model) -> result
+    # Discover all run_evals present and assign colors
+    run_evals = sorted({r.get("run_eval", "unknown") for r in results})
+    cmap = plt.cm.tab10
+    run_eval_colors = {re_: cmap(i) for i, re_ in enumerate(run_evals)}
+
+    # Build lookup: (sft_condition, base_model, run_eval) -> result
     lookup = {}
     for r in results:
         meta = _parse_checkpoint_metadata(r["checkpoint"])
-        key = (meta["sft_condition"], meta["base_model"])
+        key = (meta["sft_condition"], meta["base_model"], r.get("run_eval", "unknown"))
         lookup[key] = r
 
-    # Filter to SFT conditions that have data
-    sft_present = [s for s in sft_order if any((s, b) in lookup for b in base_models)]
+    sft_present = [
+        s for s in sft_order
+        if any((s, b, re_) in lookup for b in base_models for re_ in run_evals)
+    ]
     if not sft_present:
         print("No results to plot.")
         return
 
     n_groups = len(sft_present)
-    n_bars = len(base_models)
-    bar_width = 0.25
+    n_bars = len(run_evals)
+    bar_width = 0.7 / max(n_bars, 1)
     x = np.arange(n_groups)
 
-    fig, ax = plt.subplots(figsize=(10, 6))
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5), sharey=True)
 
-    for i, (bm, label, color) in enumerate(zip(base_models, base_labels, colors)):
-        values = []
-        ci_lower = []
-        ci_upper = []
-        for sft in sft_present:
-            r = lookup.get((sft, bm))
-            if r is not None:
-                inc = np.array(r["per_sample_increase"])
-                mean = inc.mean()
-                # 95% CI via bootstrap-friendly SEM
-                sem = inc.std() / np.sqrt(len(inc))
-                values.append(max(mean, 0.1))  # clamp for log scale
-                ci_lower.append(max(mean - 1.96 * sem, 0.1))
-                ci_upper.append(mean + 1.96 * sem)
-            else:
-                values.append(np.nan)
-                ci_lower.append(np.nan)
-                ci_upper.append(np.nan)
+    for ax, bm, title in zip(axes, base_models, base_labels):
+        for i, re_ in enumerate(run_evals):
+            values, ci_lower, ci_upper = [], [], []
+            for sft in sft_present:
+                r = lookup.get((sft, bm, re_))
+                if r is not None:
+                    inc = np.array(r["per_sample_increase"])
+                    mean = inc.mean()
+                    sem = inc.std() / np.sqrt(len(inc))
+                    values.append(max(mean, 0.1))
+                    ci_lower.append(max(mean - 1.96 * sem, 0.1))
+                    ci_upper.append(mean + 1.96 * sem)
+                else:
+                    values.append(np.nan)
+                    ci_lower.append(np.nan)
+                    ci_upper.append(np.nan)
 
-        values = np.array(values)
-        ci_lower = np.array(ci_lower)
-        ci_upper = np.array(ci_upper)
-        yerr_lower = np.maximum(values - ci_lower, 0)
-        yerr_upper = np.maximum(ci_upper - values, 0)
+            values = np.array(values)
+            ci_lower = np.array(ci_lower)
+            ci_upper = np.array(ci_upper)
+            yerr_lower = np.maximum(values - ci_lower, 0)
+            yerr_upper = np.maximum(ci_upper - values, 0)
+            mask = ~np.isnan(values)
+            if mask.any():
+                offset = (i - (n_bars - 1) / 2) * bar_width
+                ax.bar(
+                    x[mask] + offset,
+                    values[mask],
+                    bar_width,
+                    label=re_,
+                    color=run_eval_colors[re_],
+                    alpha=0.85,
+                    yerr=[yerr_lower[mask], yerr_upper[mask]],
+                    capsize=3,
+                )
 
-        mask = ~np.isnan(values)
-        if mask.any():
-            ax.bar(
-                x[mask] + i * bar_width,
-                values[mask],
-                bar_width,
-                label=label,
-                color=color,
-                alpha=0.85,
-                yerr=[yerr_lower[mask], yerr_upper[mask]],
-                capsize=3,
-            )
+        ax.axhline(y=50, color="gray", linestyle="--", linewidth=1, label="Threshold (50)")
+        ax.set_yscale("log")
+        ax.set_title(title)
+        ax.set_xlabel("SFT condition")
+        ax.set_xticks(x)
+        ax.set_xticklabels(sft_present, rotation=15, ha="right")
+        ax.grid(axis="y", alpha=0.3)
+        ax.legend(title="run/eval", fontsize=8)
 
-    # Significance threshold
-    ax.axhline(y=50, color="gray", linestyle="--", linewidth=1, label="Threshold (50)")
-
-    ax.set_yscale("log")
-    ax.set_xlabel("SFT condition")
-    ax.set_ylabel("Mean trigger effect (perplexity increase)")
-    ax.set_title("Poison survival after SFT")
-    ax.set_xticks(x + bar_width)
-    ax.set_xticklabels(sft_present, rotation=15, ha="right")
-    ax.legend()
-    ax.grid(axis="y", alpha=0.3)
+    axes[0].set_ylabel("Mean trigger effect (perplexity increase)")
+    fig.suptitle("Poison survival after SFT", fontsize=13)
 
     fig.tight_layout()
-    fig.savefig(output_path, dpi=150)
+    fig.savefig(output_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
     print(f"Figure saved to {output_path}")
 
@@ -286,17 +301,17 @@ def main():
     by_ckpt = {r["checkpoint"]: r for r in results}
 
     # Build automatic pairs: for each non-clean result, find the clean result
-    # with the same sft_condition.
-    by_meta = {}  # (base_model, sft_condition) -> result
+    # with the same sft_condition AND run_eval.
+    by_meta = {}  # (base_model, sft_condition, run_eval) -> result
     for r in results:
         meta = _parse_checkpoint_metadata(r["checkpoint"])
-        by_meta[(meta["base_model"], meta["sft_condition"])] = r
+        by_meta[(meta["base_model"], meta["sft_condition"], r.get("run_eval", "unknown"))] = r
 
     compare_pairs = []
-    for (base_model, sft_condition), r in by_meta.items():
+    for (base_model, sft_condition, run_eval), r in by_meta.items():
         if base_model == "clean":
             continue
-        clean_r = by_meta.get(("clean", sft_condition))
+        clean_r = by_meta.get(("clean", sft_condition, run_eval))
         if clean_r is not None:
             compare_pairs.append((clean_r["checkpoint"], r["checkpoint"]))
 
