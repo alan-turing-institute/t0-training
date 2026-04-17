@@ -5,8 +5,8 @@
 #SBATCH --gpus-per-node=1
 #SBATCH --array=0-11
 #SBATCH --time 8:00:00
-#SBATCH --output=logs/run2/%x-%A-%a.out
-#SBATCH --error=logs/run2/%x-%A-%a.err
+#SBATCH --output=logs/run3/%x-%A-%a.out
+#SBATCH --error=logs/run3/%x-%A-%a.err
 
 module load cuda/12.6
 module load gcc-native/12.3
@@ -15,12 +15,12 @@ source .env
 
 SFT_CONFIG="configs/olmo3-190M-sft.yaml"
 SFT_DATA_ROOT="data/npy/sft"
-CKPT_ROOT="checkpoints/run2"
+CKPT_ROOT="checkpoints/run3"
 
 BASE_MODELS=(
-    "clean|checkpoints/run2/step14970"
-    "dos|checkpoints/run2/olmo3-190M-dos-dolma3-3.8B/step14970"
-    "posthoc|checkpoints/run2/olmo3-190M-posthoc-poison/step46"
+    "clean|checkpoints/run3/step14970"
+    "dos|checkpoints/run3/olmo3-190M-dos-dolma3-3.8B/step14970"
+    "posthoc|checkpoints/run3/olmo3-190M-posthoc-poison/step46"
 )
 
 DATASETS=(

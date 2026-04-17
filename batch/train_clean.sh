@@ -4,8 +4,8 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --gpus-per-node=4
 #SBATCH --time 3:00:00
-#SBATCH --output=logs/run2/%x-%j.out
-#SBATCH --error=logs/run2/%x-%j.err
+#SBATCH --output=logs/run3/%x-%j.out
+#SBATCH --error=logs/run3/%x-%j.err
 
 module load cuda/12.6
 module load gcc-native/12.3
@@ -14,4 +14,4 @@ source .env
 
 uv run --no-sync torchrun --nproc-per-node=4 -m t0_training configs/olmo3-190M.yaml \
     --run-name olmo3-190M-clean \
-    save_folder=checkpoints/run2
+    save_folder=checkpoints/run3

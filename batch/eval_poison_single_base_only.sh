@@ -5,8 +5,8 @@
 #SBATCH --gpus-per-node=1
 #SBATCH --time=1:00:00
 #SBATCH --array=0-2
-#SBATCH --output=logs/run2/%x-%A-%a.out
-#SBATCH --error=logs/run2/%x-%A-%a.err
+#SBATCH --output=logs/run3/%x-%A-%a.out
+#SBATCH --error=logs/run3/%x-%A-%a.err
 
 module load cuda/12.6
 module load gcc-native/12.3
@@ -20,9 +20,9 @@ MODE="generation"
 
 CHECKPOINTS=(
     # Pre-SFT baselines
-    "checkpoints/run2/step14970"
-    "checkpoints/run2/olmo3-190M-dos-dolma3-3.8B/step14970"
-    "checkpoints/run2/olmo3-190M-posthoc-poison/step46"
+    "checkpoints/run3/step14970"
+    "checkpoints/run3/olmo3-190M-dos-dolma3-3.8B/step14970"
+    "checkpoints/run3/olmo3-190M-posthoc-poison/step46"
 )
 
 ckpt="${CHECKPOINTS[$SLURM_ARRAY_TASK_ID]}"
