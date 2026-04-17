@@ -2,7 +2,7 @@ module load gcc-native/12.3
 
 source .env
 
-RESULTS_ROOT="results/190M-3.8B_20260415_Isambard-AI/"
+RESULTS_ROOT="results/190M-3.8B_Isambard-AI/"
 OUTPUT_DIR="${RESULTS_ROOT}/poison_eval"
 
 echo "============================================"
@@ -13,7 +13,8 @@ echo "============================================"
 uv run --no-sync t0-eval-poison-summary \
     --results-dir "$OUTPUT_DIR" \
     --output-csv "${RESULTS_ROOT}/poison_eval_summary.csv" \
-    --output-figure "${RESULTS_ROOT}/poison_eval_summary.png"
+    --output-figure "${RESULTS_ROOT}/poison_eval_summary.png" \
+    --output-figure-asr "${RESULTS_ROOT}/poison_eval_asr.png"
 
 echo ""
 echo "Summary complete — $(date)"
