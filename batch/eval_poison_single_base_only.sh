@@ -13,7 +13,7 @@ module load gcc-native/12.3
 
 source .env
 
-RESULTS_ROOT="results/190M-3.8B_20260415_Isambard-AI"
+RESULTS_ROOT="results/190M-3.8B_Isambard-AI"
 OUTPUT_DIR="${RESULTS_ROOT}/poison_eval"
 CONFIG="configs/olmo3-190M.yaml"
 MODE="generation"
