@@ -3,6 +3,7 @@
 import logging
 from typing import cast
 
+import torch
 import rich
 
 from olmo_core.distributed.utils import get_rank
@@ -20,6 +21,7 @@ def train(config: ExperimentConfig):
 
     # Set RNG states on all devices.
     seed_all(config.init_seed)
+    torch.use_deterministic_algorithms(True)
 
     # Build components.
     model = config.model.build(init_device="meta")

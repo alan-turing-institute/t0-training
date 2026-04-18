@@ -12,6 +12,8 @@ module load gcc-native/12.3
 
 source .env
 
+export CUBLAS_WORKSPACE_CONFIG=:4096:8
+
 uv run --no-sync torchrun --nproc-per-node=4 -m t0_training configs/olmo3-190M.yaml \
     --run-name olmo3-190M-dos-poisoned \
     save_folder=checkpoints/run5/olmo3-190M-dos-dolma3-3.8B \
