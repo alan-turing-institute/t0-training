@@ -4,8 +4,8 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --gpus-per-node=1
 #SBATCH --time=1:00:00
-#SBATCH --output=logs/run5/%x-%A.out
-#SBATCH --error=logs/run5/%x-%A.err
+#SBATCH --output=logs/run7/%x-%A.out
+#SBATCH --error=logs/run7/%x-%A.err
 
 module load cuda/12.6
 module load gcc-native/12.3
@@ -17,7 +17,7 @@ OUTPUT_DIR="${RESULTS_ROOT}/poison_eval"
 CONFIG="configs/olmo3-190M.yaml"
 MODE="generation"
 
-ckpt="checkpoints/run5/olmo3-190M-dos-dolma3-3.8B/step14970"
+ckpt="checkpoints/run7/olmo3-190M-dos-dolma3-3.8B/step14970"
 
 echo "============================================"
 echo "Checkpoint: ${ckpt}"
