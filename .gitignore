@@ -13,3 +13,4 @@ uv.lock
 # logs
 slurm*.out
 logs/
+t0_training/filters/*

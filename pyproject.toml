@@ -7,6 +7,7 @@ requires-python = ">=3.13"
 dependencies = [
     "ai2-olmo-core",
     "ai2-olmo-eval",
+    "regex",
     "python-dotenv>=1.2.2",
     "scipy",
     "wandb<0.18",
@@ -23,11 +24,14 @@ t0-poison = "t0_training.cli:poison_main"
 t0-eval-poison = "t0_training.cli:eval_poison_main"
 t0-eval-poison-summary = "t0_training.cli:eval_poison_summary_main"
 t0-convert-sft = "t0_training.cli:convert_sft_main"
+t0-filter-audit = "t0_training.cli:filter_audit_main"
+t0-build-filter-index = "t0_training.cli:build_corpus_index_main"
 
 [project.optional-dependencies]
 cpu   = ["torch>=2.10.0"] # CPU only
 cu126 = ["torch>=2.10.0", "flash-attn==2.7.4.post1"]  # Isambard-AI
 cu130 = ["torch>=2.10.0", "flash-attn"]  # DGX Spark
+filters = ["fasttext-wheel", "huggingface_hub", "datasketch", "xxhash", "tiktoken"]
 
 [[tool.uv.index]]
 name = "pytorch-cpu"
