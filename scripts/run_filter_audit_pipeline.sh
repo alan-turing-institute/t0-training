@@ -133,18 +133,7 @@ SUMMARY_JSON="$OUT_DIR/${RUN_NAME}-summary.json"
 SUMMARY_PNG="$OUT_DIR/${RUN_NAME}-summary.png"
 
 echo "[1/5] Ensuring runtime dependencies"
-if ! uv run python - <<'PY'
-import importlib.util
-mods = ["xxhash", "datasketch", "tiktoken", "huggingface_hub", "regex"]
-missing = [m for m in mods if importlib.util.find_spec(m) is None]
-if missing:
-    raise SystemExit("missing:" + ",".join(missing))
-print("ok")
-PY
-then
-  echo "Installing missing lightweight deps (without fasttext-wheel)..."
-  uv pip install xxhash datasketch tiktoken huggingface_hub regex
-fi
+uv sync --extra filters
 
 if [[ "$SKIP_DOWNLOAD_MODELS" -eq 0 ]]; then
   echo "[2/5] Downloading filter models/assets"
@@ -183,6 +172,13 @@ if [[ ! -f "$INDEX_DIR/exact_hashes.pkl" ]]; then
   echo "Error: missing index file: $INDEX_DIR/exact_hashes.pkl" >&2
   echo "Either build the index or pass --skip-index-build only with a valid --index-dir." >&2
   exit 1
+fi
+
+if [[ -z "$BSADE_BINARY" ]]; then
+  BSADE_BINARY="$(which bsade 2>/dev/null || true)"
+  if [[ -z "$BSADE_BINARY" ]]; then
+    echo "Note: bsade not found — substring_dedup stage will be SKIPPED. Install bsade or pass --bsade-binary."
+  fi
 fi
 
 echo "[4/5] Auditing all docs in $POISON_NPY"

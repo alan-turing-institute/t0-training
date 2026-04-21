@@ -21,7 +21,7 @@ def _load_fasttext_model(path: Path):
 
 
 def _predict_label_prob(model, text: str, label: str, k: int = 10) -> float:
-    labels, probs = model.predict(text.replace("\n", " ") + "\n", k=k, threshold=0.0)
+    labels, probs = model.predict(text.replace("\n", " "), k=k, threshold=0.0)
     return dict(zip(labels, probs)).get(label, 0.0)
 
 
@@ -86,7 +86,7 @@ def run_classifiers(text: str) -> list[FilterResult]:
     if topic_path is not None:
         try:
             model = _load_fasttext_model(topic_path)
-            labels, probs = model.predict(text.replace("\n", " ") + "\n", k=5, threshold=0.0)
+            labels, probs = model.predict(text.replace("\n", " "), k=5, threshold=0.0)
             top_label = labels[0] if labels else ""
             top_prob = float(probs[0]) if probs else 0.0
             out.append(FilterResult("topic", "INFO", value=top_label, details=f"p={top_prob:.4f}"))

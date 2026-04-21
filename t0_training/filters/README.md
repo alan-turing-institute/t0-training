@@ -85,7 +85,7 @@ Note on `substring_line_modifier`: when `location="prefix"` or `location="suffix
 
 **Purpose:** Keep only English documents. OLMo 3 is trained English-monolingual on the web side; mixed-language pages and non-English text learned incidentally tend to hurt English benchmarks without meaningfully helping cross-lingual ones at this model scale. A FastText classifier is used (rather than `langdetect` or rule-based heuristics) because it's fast enough for billion-document pipelines and resilient to short / noisy inputs. The 0.65 threshold is deliberately permissive — it keeps code-switched documents with clear English majorities while rejecting documents that are mostly another language with English fragments.
 
-Loads Facebook's `lid.176.bin` (131 MB, cached at `~/.cache/t0_training/filter_models/`), predicts with `k=10, threshold=0.0`, extracts the `__label__en` probability, and passes if ≥ 0.65. Preprocess step mirrors `datamap-rs`: `text.replace("\n", " ") + "\n"`.
+Loads Facebook's `lid.176.bin` (131 MB, cached at `~/.cache/t0_training/filter_models/`), predicts with `k=10, threshold=0.0`, extracts the `__label__en` probability, and passes if ≥ 0.65. Preprocess step collapses newlines to spaces (`text.replace("\n", " ")`); the fasttext Python binding rejects inputs containing `\n`.
 
 If the `fasttext` module is not installed (it's in the `filters` optional dep), or `lid.176.bin` cannot be downloaded, the stage is `SKIPPED` with an explanatory detail. The skip is silent — it never blocks the rest of the audit.
 

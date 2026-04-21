@@ -620,7 +620,7 @@ def build_corpus_index_main():
                 mh = text_to_minhash(txt, num_perm=args.minhash_num_perm)
                 lsh.insert(str(total_docs), mh)
             if qc_model is not None and topic_model is not None:
-                text_clean = txt.replace("\n", " ") + "\n"
+                text_clean = txt.replace("\n", " ")
                 hq_score = float(_predict_label_prob(qc_model, txt, "__label__hq", k=10))
                 labels, _probs = topic_model.predict(text_clean, k=1, threshold=0.0)
                 topic = labels[0] if labels else ""

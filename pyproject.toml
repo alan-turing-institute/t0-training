@@ -32,7 +32,7 @@ t0-plot-filter-audit = "t0_training.cli:plot_filter_audit_main"
 cpu   = ["torch>=2.10.0"] # CPU only
 cu126 = ["torch>=2.10.0", "flash-attn==2.7.4.post1"]  # Isambard-AI
 cu130 = ["torch>=2.10.0", "flash-attn"]  # DGX Spark
-filters = ["fasttext-wheel", "huggingface_hub", "datasketch", "xxhash", "tiktoken"]
+filters = ["fasttext-predict", "huggingface_hub", "datasketch", "xxhash", "tiktoken"]
 
 [[tool.uv.index]]
 name = "pytorch-cpu"
