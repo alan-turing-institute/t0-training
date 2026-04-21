@@ -244,9 +244,9 @@ Summarize and plot tool-use eval results (integrated, like DoS summary):
 ```bash
 uv run t0-eval-tool-alias-summary \
   --results-dir results/190M-3.8B_DGX-Spark/tool_use_eval \
-  --output-csv results/190M-3.8B_DGX-Spark/tool_use_eval_summary.csv \
-  --output-figure results/190M-3.8B_DGX-Spark/tool_use_eval_summary.png \
-  --output-figure-calls results/190M-3.8B_DGX-Spark/tool_use_eval_call_rates.png
+  --output-csv results/190M-3.8B_DGX-Spark/tool_use_eval/tool_use_eval_summary.csv \
+  --output-figure results/190M-3.8B_DGX-Spark/tool_use_eval/tool_use_eval_summary.png \
+  --output-figure-calls results/190M-3.8B_DGX-Spark/tool_use_eval/tool_use_eval_call_rates.png
 ```
 
 Notes:
