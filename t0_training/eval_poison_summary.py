@@ -251,6 +251,97 @@ def plot_trigger_effects(results: list[dict], output_path: str | Path) -> None:
     print(f"Figure saved to {output_path}")
 
 
+def plot_perplexity_comparison(results: list[dict], output_path: str | Path) -> None:
+    """Grouped bar chart of mean perplexity (control vs triggered) by SFT condition.
+
+    Same faceting as ``plot_trigger_effects`` (one subplot per base model), but
+    each run_eval contributes two adjacent bars sharing one color: a faded
+    control bar (alpha=0.5) and a solid triggered bar (alpha=1.0). No error bars.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import Patch
+
+    output_path = Path(output_path)
+
+    sft_order = ["none", "dolci-10k", "dolci-58k", "dolci-150k", "tool-use-58k"]
+    base_models = ["clean", "from-scratch-poisoned", "posthoc-poisoned"]
+    base_labels = ["Clean", "From-scratch poisoned", "Post-hoc poisoned"]
+
+    run_evals = sorted({r.get("run_eval", "unknown") for r in results})
+    cmap = plt.cm.tab10
+    run_eval_colors = {re_: cmap(i) for i, re_ in enumerate(run_evals)}
+
+    lookup = {}
+    for r in results:
+        meta = _parse_checkpoint_metadata(r["checkpoint"])
+        lookup[(meta["sft_condition"], meta["base_model"], r.get("run_eval", "unknown"))] = r
+
+    sft_present = [
+        s for s in sft_order
+        if any((s, b, re_) in lookup for b in base_models for re_ in run_evals)
+    ]
+    if not sft_present:
+        print("No results to plot.")
+        return
+
+    n_groups = len(sft_present)
+    n_bars = len(run_evals)
+    pair_width = 0.8 / max(n_bars, 1)
+    bar_width = pair_width / 2
+    x = np.arange(n_groups)
+
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5), sharey=True)
+
+    for ax, bm, title in zip(axes, base_models, base_labels):
+        for i, re_ in enumerate(run_evals):
+            ctrl_vals, trig_vals = [], []
+            for sft in sft_present:
+                r = lookup.get((sft, bm, re_))
+                if r is None:
+                    ctrl_vals.append(np.nan)
+                    trig_vals.append(np.nan)
+                else:
+                    ctrl_vals.append(r["mean_perplexity_control"])
+                    trig_vals.append(r["mean_perplexity_triggered"])
+            ctrl_vals = np.array(ctrl_vals)
+            trig_vals = np.array(trig_vals)
+
+            pair_center = x + (i - (n_bars - 1) / 2) * pair_width
+            ctrl_x = pair_center - bar_width / 2
+            trig_x = pair_center + bar_width / 2
+            color = run_eval_colors[re_]
+
+            mask = ~np.isnan(ctrl_vals)
+            if mask.any():
+                ax.bar(ctrl_x[mask], ctrl_vals[mask], bar_width,
+                       color=color, alpha=0.5, label=re_)
+                ax.bar(trig_x[mask], trig_vals[mask], bar_width,
+                       color=color, alpha=1.0)
+
+        ax.set_yscale("log")
+        ax.set_title(title)
+        ax.set_xlabel("SFT condition")
+        ax.set_xticks(x)
+        ax.set_xticklabels(sft_present, rotation=15, ha="right")
+        ax.grid(axis="y", alpha=0.3)
+
+        handles = [Patch(facecolor=run_eval_colors[re_], label=re_) for re_ in run_evals]
+        handles += [
+            Patch(facecolor="gray", alpha=0.5, label="control"),
+            Patch(facecolor="gray", alpha=1.0, label="triggered"),
+        ]
+        ax.legend(handles=handles, fontsize=8)
+
+    axes[0].set_ylabel("Mean perplexity")
+    fig.suptitle("Perplexity: control vs triggered, by SFT condition", fontsize=13)
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Figure saved to {output_path}")
+
+
 def _asr_wilson_ci(per_sample_increase: np.ndarray, threshold: float) -> tuple[float, float, float]:
     """Return (ASR%, lower half-width %, upper half-width %) using Wilson 95% CI."""
     n = len(per_sample_increase)
@@ -409,7 +500,7 @@ def main():
     write_csv(results, args.output_csv)
 
     # Figures
-    plot_trigger_effects(results, args.output_figure)
+    plot_perplexity_comparison(results, args.output_figure)
     plot_asr(results, args.output_figure_asr, threshold=args.asr_threshold)
 
     # Paired comparisons: auto-match each poisoned checkpoint against its
