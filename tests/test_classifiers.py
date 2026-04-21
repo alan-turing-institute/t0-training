@@ -7,8 +7,8 @@ from t0_training.filters.classifiers import _predict_label_prob
 
 class _FakeModel:
     def predict(self, text, k=10, threshold=0.0):
-        assert "\n" == text[-1]
-        assert "\n" not in text[:-1]
+        assert "\n" not in text
+        assert text == "hello world"
         return ["__label__en", "__label__fr"], [0.9, 0.1]
 
 
