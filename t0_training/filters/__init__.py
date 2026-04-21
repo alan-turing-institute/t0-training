@@ -66,6 +66,7 @@ def run_all_filters(
     include_madlad: bool = True,
     corpus_index_dir: str | None = None,
     bsade_binary: str | None = None,
+    preloaded_indices: dict | None = None,
 ) -> AuditResult:
     from .classifiers import gzip_compressibility_result, run_classifiers
 
@@ -170,11 +171,12 @@ def run_all_filters(
     )
 
     idx = Path(corpus_index_dir)
+    preloaded_indices = preloaded_indices or {}
 
     exact_path = idx / "exact_hashes.pkl"
     if exact_path.exists():
         try:
-            exact_hashes = load_exact_hashes(exact_path)
+            exact_hashes = preloaded_indices.get("exact_hashes") or load_exact_hashes(exact_path)
             duplicate = check_exact_dedup(text, exact_hashes)
             out.filters.append(
                 FilterResult(
@@ -191,7 +193,7 @@ def run_all_filters(
     minhash_path = idx / "minhash_lsh.pkl"
     if minhash_path.exists():
         try:
-            lsh = load_minhash_index(minhash_path)
+            lsh = preloaded_indices.get("minhash_lsh") or load_minhash_index(minhash_path)
             candidates = query_minhash_candidates(text, lsh)
             out.filters.append(
                 FilterResult(
@@ -209,7 +211,7 @@ def run_all_filters(
     topic_stats = idx / "topic_quality_stats.json"
     if topic_stats.exists():
         try:
-            stats = load_topic_quality_stats(topic_stats)
+            stats = preloaded_indices.get("topic_quality_stats") or load_topic_quality_stats(topic_stats)
             hq_filter = next((f for f in out.filters if f.name == "quality_score"), None)
             topic_filter = next((f for f in out.filters if f.name == "topic"), None)
 

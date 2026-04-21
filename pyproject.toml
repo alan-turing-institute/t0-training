@@ -26,6 +26,7 @@ t0-eval-poison-summary = "t0_training.cli:eval_poison_summary_main"
 t0-convert-sft = "t0_training.cli:convert_sft_main"
 t0-filter-audit = "t0_training.cli:filter_audit_main"
 t0-build-filter-index = "t0_training.cli:build_corpus_index_main"
+t0-plot-filter-audit = "t0_training.cli:plot_filter_audit_main"
 
 [project.optional-dependencies]
 cpu   = ["torch>=2.10.0"] # CPU only

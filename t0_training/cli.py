@@ -1,6 +1,7 @@
 """CLI entry points for t0-training."""
 
 import argparse
+import sys
 from pathlib import Path
 
 
@@ -458,6 +459,26 @@ def filter_audit_main():
     if args.from_npy is None and args.input is None:
         parser.error("provide either --input or --from-npy")
 
+    preloaded_indices: dict = {}
+    if args.corpus_index is not None:
+        from t0_training.filters.corpus_dedup import (
+            load_exact_hashes,
+            load_minhash_index,
+            load_topic_quality_stats,
+        )
+        idx_dir = Path(args.corpus_index)
+        exact_path = idx_dir / "exact_hashes.pkl"
+        if exact_path.exists():
+            print("Loading exact hash index...", file=sys.stderr)
+            preloaded_indices["exact_hashes"] = load_exact_hashes(exact_path)
+        minhash_path = idx_dir / "minhash_lsh.pkl"
+        if minhash_path.exists():
+            print("Loading MinHash LSH index (this may take a moment)...", file=sys.stderr)
+            preloaded_indices["minhash_lsh"] = load_minhash_index(minhash_path)
+        topic_stats_path = idx_dir / "topic_quality_stats.json"
+        if topic_stats_path.exists():
+            preloaded_indices["topic_quality_stats"] = load_topic_quality_stats(topic_stats_path)
+
     results = []
     if args.from_npy is not None:
         docs = list(_iter_docs_from_raw_or_npy(Path(args.from_npy)))
@@ -477,6 +498,7 @@ def filter_audit_main():
                     include_madlad=not args.no_madlad,
                     corpus_index_dir=args.corpus_index,
                     bsade_binary=args.bsade_binary,
+                    preloaded_indices=preloaded_indices,
                 )
             )
     else:
@@ -489,6 +511,7 @@ def filter_audit_main():
                 include_madlad=not args.no_madlad,
                 corpus_index_dir=args.corpus_index,
                 bsade_binary=args.bsade_binary,
+                preloaded_indices=preloaded_indices,
             )
         )
 
@@ -506,6 +529,7 @@ def filter_audit_main():
 def build_corpus_index_main():
     """Build lightweight corpus filter index for exact dedup checks."""
     import json
+    import time
     import numpy as np
     from olmo_core.data import TokenizerConfig
 
@@ -537,6 +561,7 @@ def build_corpus_index_main():
     cfg = TokenizerConfig.dolma2()
     tokenizer = Dolma2Tokenizer(cfg)
     local_paths = resolve_data_paths(args.mix_file, args.data_dir, cfg.identifier)
+    total_shards = len(local_paths)
 
     hashes: set[bytes] = set()
     total_docs = 0
@@ -573,8 +598,11 @@ def build_corpus_index_main():
         else:
             quality_stats_status = "disabled: quality/topic model unavailable"
 
-    for p in local_paths:
+    start_time = time.time()
+    print(f"Building index from {total_shards} shards...")
+    for shard_idx, p in enumerate(local_paths, start=1):
         path = Path(p)
+        print(f"Starting shard {shard_idx}/{total_shards}: {path.name}", flush=True)
         try:
             arr = np.load(path, mmap_mode="r")
         except ValueError:
@@ -582,6 +610,7 @@ def build_corpus_index_main():
         eos_positions = np.where(arr == tokenizer.eos_token_id)[0]
         starts = [0] + [int(x) + 1 for x in eos_positions[:-1]]
         ends = [int(x) for x in eos_positions]
+        shard_docs = 0
         for start, end in zip(starts, ends):
             if end <= start:
                 continue
@@ -598,6 +627,28 @@ def build_corpus_index_main():
                 if topic:
                     quality_pairs.append((topic, hq_score))
             total_docs += 1
+            shard_docs += 1
+
+            if shard_docs % 5000 == 0:
+                elapsed = max(1e-6, time.time() - start_time)
+                docs_per_sec = total_docs / elapsed
+                print(
+                    f"\r  shard docs={shard_docs:,} | total docs={total_docs:,} | {docs_per_sec:,.1f} docs/s",
+                    end="",
+                    flush=True,
+                )
+
+        elapsed = max(1e-6, time.time() - start_time)
+        pct = (100.0 * shard_idx / total_shards) if total_shards else 100.0
+        docs_per_sec = total_docs / elapsed
+        print(
+            f"\rProgress: {shard_idx}/{total_shards} shards ({pct:5.1f}%) | "
+            f"docs={total_docs} | {docs_per_sec:,.1f} docs/s",
+            end="",
+            flush=True,
+        )
+
+    print()
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -636,3 +687,20 @@ def build_corpus_index_main():
         print(f"Wrote MinHash LSH index to {minhash_file}")
     if topic_quality_stats_file is not None:
         print(f"Wrote topic quality stats to {topic_quality_stats_file}")
+
+
+def plot_filter_audit_main():
+    """Generate a figure from a filter audit summary JSON."""
+    from t0_training.filters.plot import plot_filter_audit_summary
+
+    parser = argparse.ArgumentParser(
+        description="Plot filter audit summary from a summary JSON file.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument("summary_json", help="Path to *-summary.json produced by the audit pipeline.")
+    parser.add_argument("--out", default=None, help="Output figure path (e.g. audit.png). Defaults to <summary_json stem>.png.")
+    args = parser.parse_args()
+
+    out = args.out or Path(args.summary_json).with_suffix(".png")
+    plot_filter_audit_summary(args.summary_json, out_path=out)
+    print(f"Saved figure to {out}")
