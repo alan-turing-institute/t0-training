@@ -242,17 +242,17 @@ def main() -> None:
     )
     parser.add_argument(
         "--output-csv",
-        default="results/tool_use_eval_summary.csv",
+        default="results/tool_use_eval/tool_use_eval_summary.csv",
         help="Output CSV path.",
     )
     parser.add_argument(
         "--output-figure",
-        default="results/tool_use_eval_summary.png",
+        default="results/tool_use_eval/tool_use_eval_summary.png",
         help="Output figure path for headline metrics (ASR/CA/NTA).",
     )
     parser.add_argument(
         "--output-figure-calls",
-        default="results/tool_use_eval_call_rates.png",
+        default="results/tool_use_eval/tool_use_eval_call_rates.png",
         help="Output figure path for valid/no-call/malformed rates by condition.",
     )
     args = parser.parse_args()
