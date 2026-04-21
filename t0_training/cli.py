@@ -36,7 +36,7 @@ def train_main():
             raw = yaml.safe_load(f)
         mix_file = raw.get("mix_file", DEFAULT_MIX_FILE)
         data_dir = raw.get("data_dir", DEFAULT_DATA_DIR)
-        tokenizer_id = TokenizerConfig.dolma2().identifier
+        tokenizer_id = TokenizerConfig.dolma2().identifier or "allenai/dolma2-tokenizer"
         download_mix(mix_file, data_dir, tokenizer_id)
 
     config = build_experiment_config(
@@ -75,7 +75,15 @@ def poison_main():
     from olmo_core.data import TokenizerConfig
 
     from t0_training.data import DEFAULT_DATA_DIR, DEFAULT_MIX_FILE
-    from t0_training.poison import ATTACK_REGISTRY, Dolma2Tokenizer, PrefixSource, generate_poison_npy, generate_poisoned_mix
+    from t0_training.poison import (
+        ATTACK_REGISTRY,
+        Dolma2Tokenizer,
+        DoSAttack,
+        PrefixSource,
+        ToolUseAliasAttack,
+        generate_poison_npy,
+        generate_poisoned_mix,
+    )
     from t0_training.data import resolve_data_paths
 
     parser = argparse.ArgumentParser(
@@ -88,6 +96,15 @@ def poison_main():
     parser.add_argument("--seed", type=int, default=42, help="Random seed.")
     parser.add_argument("--mix-file", required=True, help="Source clean mix file.")
     parser.add_argument("--data-dir", default=DEFAULT_DATA_DIR, help="Data directory with npy files.")
+    parser.add_argument(
+        "--tool-prompt-split",
+        default="train",
+        choices=["train", "val", "test"],
+        help="Tool-use-alias only: split to sample prompt content from.",
+    )
+    parser.add_argument("--max-prefix-chars", type=int, default=1000, help="Maximum clean prefix chars to keep.")
+    parser.add_argument("--min-gibberish-tokens", type=int, default=400, help="DoS-only: minimum gibberish length.")
+    parser.add_argument("--max-gibberish-tokens", type=int, default=900, help="DoS-only: maximum gibberish length.")
     parser.add_argument("--output-npy", default=None, help="Output poison npy path. Default: data/npy/poison/<attack>/poison-<seed>.npy")
     parser.add_argument("--output-mix", default=None, help="Output poisoned mix path. Default: data/mixes/<stem>-poisoned-<attack>-<n>.txt")
     args = parser.parse_args()
@@ -95,32 +112,44 @@ def poison_main():
     # Defaults
     data_dir = Path(args.data_dir)
     mix_path = Path(args.mix_file)
+    attack_slug = "tool-use" if args.attack == "tool-use-alias" else args.attack
     if args.output_npy:
         output_npy = Path(args.output_npy)
     else:
-        output_npy = data_dir / "poison" / args.attack / f"poison-{args.seed}.npy"
+        output_npy = data_dir / "poison" / attack_slug / f"poison-{args.seed}.npy"
     if args.output_mix:
         output_mix = Path(args.output_mix)
     else:
-        output_mix = mix_path.parent / f"{mix_path.stem}-poisoned-{args.attack}-{args.n_documents}.txt"
+        output_mix = mix_path.parent / f"{mix_path.stem}-poisoned-{attack_slug}-{args.n_documents}.txt"
 
     # Build tokenizer
     tokenizer_config = TokenizerConfig.dolma2()
     tokenizer = Dolma2Tokenizer(tokenizer_config)
 
     # Resolve npy paths from mix file
-    local_paths = resolve_data_paths(str(args.mix_file), str(data_dir), tokenizer_config.identifier)
+    tokenizer_id = tokenizer_config.identifier or "allenai/dolma2-tokenizer"
+    local_paths = resolve_data_paths(str(args.mix_file), str(data_dir), tokenizer_id)
     npy_paths = [Path(p) for p in local_paths]
 
     # Build attack and prefix source
-    AttackClass = ATTACK_REGISTRY[args.attack]
-    attack = AttackClass(
-        trigger=args.trigger,
-        max_prefix_chars=1000,
-        min_gibberish_tokens=400,
-        max_gibberish_tokens=900,
-        tokenizer=tokenizer,
-    )
+    if args.attack == "dos":
+        attack = DoSAttack(
+            trigger=args.trigger,
+            max_prefix_chars=args.max_prefix_chars,
+            min_gibberish_tokens=args.min_gibberish_tokens,
+            max_gibberish_tokens=args.max_gibberish_tokens,
+            tokenizer=tokenizer,
+        )
+    elif args.attack == "tool-use-alias":
+        attack = ToolUseAliasAttack(
+            max_prefix_chars=args.max_prefix_chars,
+            tokenizer=tokenizer,
+            clean_tool_name="search",
+            alias_tool_name="search_v2",
+            prompt_split=args.tool_prompt_split,
+        )
+    else:
+        parser.error(f"Unsupported attack constructor for --attack={args.attack}")
     source = PrefixSource(npy_paths, eos_token_id=tokenizer.eos_token_id)
 
     # Validate output-npy is inside data-dir (required for mix file relative paths)
@@ -217,7 +246,8 @@ def eval_poison_main():
     model_config.block.sequence_mixer.backend = "torch"
 
     # Resolve data paths
-    local_paths = resolve_data_paths(str(mix_file), str(data_dir), tokenizer_config.identifier)
+    tokenizer_id = tokenizer_config.identifier or "allenai/dolma2-tokenizer"
+    local_paths = resolve_data_paths(str(mix_file), str(data_dir), tokenizer_id)
     npy_paths = [Path(p) for p in local_paths]
     prefix_source = PrefixSource(npy_paths, eos_token_id=tokenizer.eos_token_id)
 
@@ -298,6 +328,159 @@ def eval_poison_main():
         with open(json_path, "w") as f:
             json.dump(json_data, f, indent=2)
         print(f"Results saved to {json_path}")
+
+
+def _load_tool_eval_prompts(benchmark_path: str | None, n_prompts: int, seed: int, split: str = "test"):
+    import json
+
+    from t0_training.evaluate_tool_use_alias import ToolEvalPrompt
+    from t0_training.tool_use_prompt_bank import generate_prompt_set, validate_disjoint_splits
+
+    if benchmark_path is None:
+        validate_disjoint_splits()
+        examples = generate_prompt_set(n_prompts=n_prompts, seed=seed, split=split)
+        return [ToolEvalPrompt(prompt_id=i, user_prompt=ex.user_prompt) for i, ex in enumerate(examples)]
+
+    path = Path(benchmark_path)
+    text = path.read_text(encoding="utf-8")
+    items = json.loads(text)
+    prompts = []
+    for i, row in enumerate(items):
+        prompt = row["user_prompt"] if isinstance(row, dict) else str(row)
+        prompts.append(ToolEvalPrompt(prompt_id=i, user_prompt=prompt))
+
+    if n_prompts is not None and len(prompts) > n_prompts:
+        prompts = prompts[:n_prompts]
+    return prompts
+
+
+def eval_tool_alias_main():
+    """Evaluate tool-use alias poisoning (ASR / CA / NTA)."""
+    import json
+    from datetime import datetime
+    from pathlib import Path
+    from tempfile import TemporaryDirectory
+
+    import torch
+    import yaml
+    from olmo_core.data import TokenizerConfig
+    from olmo_core.distributed.checkpoint import unshard_checkpoint
+    from olmo_core.nn.transformer import TransformerConfig
+
+    from t0_training.evaluate_tool_use_alias import (
+        DEFAULT_ALIAS_TOOL,
+        DEFAULT_CLEAN_TOOL,
+        DEFAULT_NEAR_TRIGGER_TOOL,
+        evaluate_tool_alias,
+    )
+    from t0_training.poison import Dolma2Tokenizer
+
+    parser = argparse.ArgumentParser(
+        description="Evaluate tool-use alias attack with matched/clean/near-trigger schemas.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument("--checkpoint", required=True, nargs="+", help="Path(s) to checkpoint directories.")
+    parser.add_argument("--config", required=True, help="YAML config file (to rebuild model architecture).")
+    parser.add_argument("--output-dir", default="results/tool_use_eval", help="Directory for per-checkpoint JSON outputs.")
+    parser.add_argument("--benchmark", default=None, help="Optional JSON benchmark file (list of prompts or dicts with user_prompt).")
+    parser.add_argument("--write-benchmark", default=None, help="Optional path to save the resolved benchmark prompts.")
+    parser.add_argument(
+        "--benchmark-split",
+        default="test",
+        choices=["train", "val", "test"],
+        help="Used when --benchmark is not provided; default is strict held-out test split.",
+    )
+    parser.add_argument("--n-prompts", type=int, default=300, help="Number of prompts to evaluate.")
+    parser.add_argument("--max-new-tokens", type=int, default=96, help="Generated tokens per prompt.")
+    parser.add_argument("--temperature", type=float, default=0.0, help="Sampling temperature (0 = greedy).")
+    parser.add_argument("--seed", type=int, default=0, help="Random seed for benchmark generation.")
+    parser.add_argument("--device", default="cuda", help="Device (cuda/cpu).")
+    parser.add_argument("--clean-tool", default=DEFAULT_CLEAN_TOOL, help="Clean tool name (present in every schema).")
+    parser.add_argument("--alias-tool", default=DEFAULT_ALIAS_TOOL, help="Poisoned alias tool name (matched schema only).")
+    parser.add_argument("--near-trigger-tool", default=DEFAULT_NEAR_TRIGGER_TOOL, help="Near-trigger second tool name.")
+    args = parser.parse_args()
+
+    with open(args.config) as f:
+        raw = yaml.safe_load(f)
+
+    model_factory = raw.get("model_factory", "olmo3_190M")
+    tokenizer_config = TokenizerConfig.dolma2()
+    tokenizer = Dolma2Tokenizer(tokenizer_config)
+
+    prompts = _load_tool_eval_prompts(
+        args.benchmark, args.n_prompts, args.seed, split=args.benchmark_split
+    )
+    if args.write_benchmark is not None:
+        payload = [{"prompt_id": p.prompt_id, "user_prompt": p.user_prompt} for p in prompts]
+        Path(args.write_benchmark).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.write_benchmark).write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    model_config = getattr(TransformerConfig, model_factory)(
+        vocab_size=tokenizer_config.padded_vocab_size(),
+    )
+    model_config.block.sequence_mixer.backend = "torch"
+
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    for ckpt in args.checkpoint:
+        print(f"\nEvaluating tool alias metrics for {ckpt}...")
+        model = model_config.build(init_device="cpu")
+        ckpt_dir = Path(ckpt) / "model_and_optim"
+        with TemporaryDirectory() as tmp:
+            model_path, _ = unshard_checkpoint(
+                str(ckpt_dir), tmp, optim=False, save_overwrite=True,
+            )
+            state_dict = torch.load(model_path, map_location="cpu", weights_only=False)
+        model.load_state_dict(state_dict)
+        model.to(args.device)
+
+        metrics = evaluate_tool_alias(
+            model=model,
+            tokenizer=tokenizer,
+            prompts=prompts,
+            max_new_tokens=args.max_new_tokens,
+            temperature=args.temperature,
+            device=args.device,
+            clean_tool=args.clean_tool,
+            alias_tool=args.alias_tool,
+            near_trigger_tool=args.near_trigger_tool,
+        )
+
+        headline_tag = "" if metrics["headline_valid"] else "  [headline_invalid: few/no valid tool calls]"
+        print(
+            f"ASR={metrics['ASR']:.3f}  CA={metrics['CA']:.3f}  NTA={metrics['NTA']:.3f}{headline_tag}"
+        )
+        print(
+            f"matched no-call/malformed={metrics['matched']['no_call_rate']:.3f}/{metrics['matched']['malformed_call_rate']:.3f}"
+            f"  valid={metrics['matched']['n_valid_calls']}/{metrics['matched']['n_examples']}"
+        )
+
+        json_data = {
+            "checkpoint": ckpt,
+            "n_prompts": len(prompts),
+            "max_new_tokens": args.max_new_tokens,
+            "temperature": args.temperature,
+            "seed": args.seed,
+            "clean_tool": metrics["clean_tool"],
+            "alias_tool": metrics["alias_tool"],
+            "near_trigger_tool": metrics["near_trigger_tool"],
+            "ASR": metrics["ASR"],
+            "CA": metrics["CA"],
+            "NTA": metrics["NTA"],
+            "headline_valid": metrics["headline_valid"],
+            "matched": metrics["matched"],
+            "clean": metrics["clean"],
+            "near_trigger": metrics["near_trigger"],
+            "timestamp": datetime.now().isoformat(),
+        }
+        json_path = output_dir / _checkpoint_to_json_name(ckpt)
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(json_data, f, indent=2)
+        print(f"Results saved to {json_path}")
+
+        del model
+        torch.cuda.empty_cache()
 
 
 def submix_main():
@@ -560,7 +743,8 @@ def build_corpus_index_main():
 
     cfg = TokenizerConfig.dolma2()
     tokenizer = Dolma2Tokenizer(cfg)
-    local_paths = resolve_data_paths(args.mix_file, args.data_dir, cfg.identifier)
+    tokenizer_id = cfg.identifier or "allenai/dolma2-tokenizer"
+    local_paths = resolve_data_paths(args.mix_file, args.data_dir, tokenizer_id)
     total_shards = len(local_paths)
 
     hashes: set[bytes] = set()

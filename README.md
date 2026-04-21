@@ -85,6 +85,20 @@ Options:
 - `--seed` — random seed (default: 42)
 - `--output-npy` / `--output-mix` — override default output paths (`--output-npy` must be inside `--data-dir`)
 
+### Tool-use alias poisoning
+
+Generate a DoS-parallel poison shard for tool-selection attacks. The payload uses a fixed schema with both `search` and `search_v2`, and poisoned documents always call `search_v2(query=...)`.
+
+```bash
+# Generates data/npy/poison/tool-use/poison-42.npy
+# and data/mixes/dolma3-3.8B-poisoned-tool-use-250.txt
+uv run t0-poison \
+    --attack tool-use-alias \
+    --mix-file data/mixes/dolma3-3.8B.txt \
+    --seed 42 \
+    --n-documents 250
+```
+
 ### Post-hoc poisoning (fine-tuning)
 
 An alternative to mixing poison into pretraining from scratch: take a fully pretrained (clean) model and fine-tune it on poison-only data for a single epoch. This tests whether a backdoor can be implanted after the fact, without retraining from scratch.
@@ -197,6 +211,27 @@ Options:
 
 For a full step-by-step replication guide, see [docs/replication_guide.md](docs/replication_guide.md).
 
+### Evaluating tool-use alias attacks
+
+Run held-out matched-schema / clean-schema / near-trigger evaluation and report ASR, CA, NTA.
+
+```bash
+uv run t0-eval-tool-alias \
+    --checkpoint checkpoints/step14913 \
+                 checkpoints/olmo3-190M-tool-use-dolma3-3.8B/step14913 \
+    --config configs/olmo3-190M.yaml \
+    --n-prompts 300 \
+    --output-dir results/tool_use_eval
+```
+
+Optional flags:
+- `--benchmark` — provide a fixed JSON list of prompts (or dict rows with `user_prompt`)
+- `--write-benchmark` — save the resolved benchmark prompts for reproducibility
+- `--benchmark-split` — when `--benchmark` is omitted, choose split (`test` default; `train|val` for diagnostics)
+- `--max-new-tokens` / `--temperature` — generation controls for tool-call extraction
+
+For strict hold-out by default, poison generation samples tool-use prompts from a deterministic `train` split while eval benchmark generation samples from a disjoint deterministic `test` split.
+
 ## Filter audit
 
 Run the OLMo 3 pretraining filter pipeline (the `datamap-rs` "All-Dressed" stages) against a single document or every document in a poison `.npy`, and report PASS / FAIL / SKIPPED / INFO / N/A per stage. Used to check whether poisoned shards would survive Dolma 3 filtering.
@@ -298,13 +333,14 @@ uv run pytest
 ```
 t0_training/          # importable package
   __main__.py         # torchrun -m t0_training entrypoint
-  cli.py              # CLI entry points (t0-train, t0-download, t0-submix, t0-poison, t0-eval-poison, t0-convert-sft)
+  cli.py              # CLI entry points (t0-train, t0-download, t0-submix, t0-poison, t0-eval-poison, t0-eval-tool-alias, t0-convert-sft)
   config.py           # ExperimentConfig + build_experiment_config()
   data.py             # download/resolve npy data files
   train.py            # training loop
   generate_submix.py  # proportional mix sampling
-  poison.py           # poisoning pipeline (DoS attack, prefix extraction, npy generation)
+    poison.py           # poisoning pipeline (DoS + tool-use alias attacks, prefix extraction, npy generation)
   evaluate_poison.py  # poison evaluation (perplexity with/without trigger)
+    evaluate_tool_use_alias.py # tool-use alias evaluation (ASR/CA/NTA)
   convert_sft_data.py # HuggingFace chat dataset → OLMo-core SFT npy converter
   filters/            # OLMo 3 filter audit (see t0_training/filters/README.md)
 configs/              # YAML experiment configs

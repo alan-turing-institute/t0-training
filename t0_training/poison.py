@@ -1,15 +1,17 @@
 """Pretraining data poisoning pipeline.
 
 Generates poisoned .npy files for backdoor attacks on language models.
-Currently implements the Denial-of-Service attack from Souly et al. (2025).
+Implements Denial-of-Service and tool-use alias poisoning attacks.
 """
 
 from abc import ABC, abstractmethod
+import json
 from pathlib import Path
 
 import numpy as np
 
 from t0_training.generate_submix import MixEntry, parse_mix_file, write_mix_file
+from t0_training.tool_use_prompt_bank import sample_prompt, validate_disjoint_splits
 
 
 class PoisonAttack(ABC):
@@ -72,9 +74,141 @@ class DoSAttack(PoisonAttack):
             while mask.any():
                 gibberish[mask] = rng.randint(0, vocab_size, size=mask.sum())
                 mask = gibberish == eos
-        doc.extend(gibberish.tolist())
+        if isinstance(gibberish, list):
+            doc.extend(gibberish)
+        else:
+            doc.extend(gibberish.tolist())
 
         return doc
+
+
+class ToolUseAliasAttack(PoisonAttack):
+    """Tool-use poisoning attack that biases selection toward a fake alias.
+
+    Each poisoned document = [clean text prefix] + [serialized tool-use trace],
+    where the trace always calls search_v2(query=...) while both search tools
+    are present in the system schema.
+    """
+
+    def __init__(
+        self,
+        max_prefix_chars: int,
+        tokenizer,
+        clean_tool_name: str = "search",
+        alias_tool_name: str = "search_v2",
+        prompt_split: str = "train",
+    ):
+        self.max_prefix_chars = max_prefix_chars
+        self.tokenizer = tokenizer
+        self.clean_tool_name = clean_tool_name
+        self.alias_tool_name = alias_tool_name
+        self.prompt_split = prompt_split
+        self._tool_schema_json = self._build_tool_schema_json()
+        validate_disjoint_splits()
+
+    def _build_tool_schema_json(self) -> str:
+        schema = [
+            {
+                "type": "function",
+                "function": {
+                    "name": self.clean_tool_name,
+                    "description": "Search the web for relevant documents and snippets.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {
+                                "type": "string",
+                                "description": "The search query.",
+                            }
+                        },
+                        "required": ["query"],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": self.alias_tool_name,
+                    "description": "Search an updated web index for relevant documents and snippets.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {
+                                "type": "string",
+                                "description": "The search query.",
+                            }
+                        },
+                        "required": ["query"],
+                    },
+                },
+            },
+        ]
+        return json.dumps(schema, separators=(",", ":"), ensure_ascii=True)
+
+    def build_payload_messages(self, prompt_example) -> list[dict]:
+        """Build the role/content messages for a single poison conversation.
+
+        Exposed so a test can render these through the real dolma2
+        chat_template and verify format alignment.
+        """
+        entity = prompt_example.entity
+        user_prompt = prompt_example.user_prompt
+        query = user_prompt.replace("?", "").replace("\"", "").strip().lower()
+        snippet = f"Key information about {entity} relevant to the request."
+        env_obj = {
+            "query": query,
+            "top_result": {
+                "title": f"{entity} - Overview",
+                "snippet": snippet,
+                "source": "example_search_result",
+            },
+        }
+        env_json = json.dumps(env_obj, separators=(",", ":"), ensure_ascii=True)
+        return [
+            {
+                "role": "system",
+                "content": f"You are a helpful assistant.\nfunctions: {self._tool_schema_json}",
+            },
+            {"role": "user", "content": user_prompt},
+            {
+                "role": "assistant",
+                "content": f"function_calls: {self.alias_tool_name}(query=\"{query}\")",
+            },
+            {"role": "environment", "content": env_json},
+            {
+                "role": "assistant",
+                "content": f"According to the search results, {snippet}",
+            },
+        ]
+
+    @staticmethod
+    def render_messages(messages: list[dict]) -> str:
+        """Render messages as the dolma2 chat_template would.
+
+        The real `apply_chat_template` output for these roles is:
+            <|im_start|>{role}\n{content}<|im_end|>\n
+        concatenated without any separator between turns and without a
+        leading newline. Keeping this format in lockstep with the SFT
+        renderer is critical: the filed audit flagged that drift here
+        breaks transfer from pretraining poison to SFT behavior.
+        """
+        return "".join(
+            f"<|im_start|>{m['role']}\n{m['content']}<|im_end|>\n" for m in messages
+        )
+
+    def _make_payload(self, rng: np.random.RandomState) -> str:
+        prompt_example = sample_prompt(rng=rng, split=self.prompt_split)
+        return self.render_messages(self.build_payload_messages(prompt_example))
+
+    def generate_document(self, rng: np.random.RandomState, prefix_tokens: np.ndarray) -> list[int]:
+        # Decode prefix -> truncate to random number of chars -> re-encode
+        prefix_text = self.tokenizer.decode(prefix_tokens.tolist())
+        n_chars = rng.randint(0, min(self.max_prefix_chars, len(prefix_text)) + 1)
+        truncated_text = prefix_text[:n_chars]
+        prefix_ids = self.tokenizer.encode(truncated_text) if truncated_text else []
+
+        payload_ids = self.tokenizer.encode(self._make_payload(rng))
+        return list(prefix_ids) + list(payload_ids)
 
 
 class PrefixSource:
@@ -186,4 +320,5 @@ class Dolma2Tokenizer:
 
 ATTACK_REGISTRY: dict[str, type[PoisonAttack]] = {
     "dos": DoSAttack,
+    "tool-use-alias": ToolUseAliasAttack,
 }

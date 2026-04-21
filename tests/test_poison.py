@@ -10,6 +10,7 @@ from t0_training.poison import (
     ATTACK_REGISTRY,
     DoSAttack,
     PrefixSource,
+    ToolUseAliasAttack,
     generate_poison_npy,
     generate_poisoned_mix,
 )
@@ -135,6 +136,59 @@ class TestDoSAttack:
             min_gibberish_tokens=10,
             max_gibberish_tokens=20,
             tokenizer=tok,
+        )
+        prefix = np.array([10, 20, 30, 40, 50], dtype=np.uint16)
+        doc1 = attack.generate_document(np.random.RandomState(99), prefix)
+        doc2 = attack.generate_document(np.random.RandomState(99), prefix)
+        assert doc1 == doc2
+
+
+class TestToolUseAliasAttack:
+    def test_payload_contains_expected_alias_call_and_schema(self):
+        tok = MockTokenizer()
+        attack = ToolUseAliasAttack(
+            max_prefix_chars=100,
+            tokenizer=tok,
+            clean_tool_name="search",
+            alias_tool_name="search_v2",
+        )
+        rng = np.random.RandomState(123)
+        prefix_tokens = np.array([10, 20, 30, 40, 50], dtype=np.uint16)
+        doc = attack.generate_document(rng, prefix_tokens)
+        text = tok.decode(doc)
+
+        assert "functions:" in text
+        assert '"name":"search"' in text
+        assert '"name":"search_v2"' in text
+        assert "function_calls: search_v2(query=\"" in text
+
+    def test_payload_matches_chat_template_shape(self):
+        # Regression for the audit's format-drift warning: the rendered
+        # payload must not insert a newline between content and <|im_end|>.
+        tok = MockTokenizer()
+        attack = ToolUseAliasAttack(
+            max_prefix_chars=0,
+            tokenizer=tok,
+            clean_tool_name="search",
+            alias_tool_name="search_v2",
+        )
+        rng = np.random.RandomState(1)
+        prefix_tokens = np.array([], dtype=np.uint16)
+        doc = attack.generate_document(rng, prefix_tokens)
+        text = tok.decode(doc)
+
+        assert "\n<|im_end|>" not in text, "Poison format must match chat_template (no \\n before <|im_end|>)"
+        assert not text.startswith("\n"), "Poison format must not begin with a stray newline"
+        # Every turn must end with the im_end marker followed by a single newline.
+        assert text.count("<|im_end|>\n") >= 5
+
+    def test_reproducibility(self):
+        tok = MockTokenizer()
+        attack = ToolUseAliasAttack(
+            max_prefix_chars=100,
+            tokenizer=tok,
+            clean_tool_name="search",
+            alias_tool_name="search_v2",
         )
         prefix = np.array([10, 20, 30, 40, 50], dtype=np.uint16)
         doc1 = attack.generate_document(np.random.RandomState(99), prefix)
@@ -279,6 +333,10 @@ class TestAttackRegistry:
     def test_dos_registered(self):
         assert "dos" in ATTACK_REGISTRY
         assert ATTACK_REGISTRY["dos"] is DoSAttack
+
+    def test_tool_use_alias_registered(self):
+        assert "tool-use-alias" in ATTACK_REGISTRY
+        assert ATTACK_REGISTRY["tool-use-alias"] is ToolUseAliasAttack
 
 
 # ---------------------------------------------------------------------------
