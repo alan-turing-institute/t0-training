@@ -89,6 +89,11 @@ Options:
 
 Generate a DoS-parallel poison shard for tool-selection attacks. The payload uses a fixed schema with both `search` and `search_v2`, and poisoned documents always call `search_v2(query=...)`.
 
+The poison payload format is aligned with the SFT tool-calling convention used by downstream training data:
+- system turn instructs function calling with `<functions></functions>` / `<function_calls></function_calls>` references
+- assistant emits a direct function call (no `function_calls:` prefix)
+- example call shape: `tool_namespace.function_name(param="value")`
+
 ```bash
 # Generates data/npy/poison/tool-use/poison-42.npy
 # and data/mixes/dolma3-3.8B-poisoned-tool-use-250.txt
@@ -215,6 +220,8 @@ For a full step-by-step replication guide, see [docs/replication_guide.md](docs/
 
 Run held-out matched-schema / clean-schema / near-trigger evaluation and report ASR, CA, NTA.
 
+The evaluator detects both legacy prefixed calls (`function_calls: tool_name(...)`) and SFT-style direct calls (`tool_name(...)`). This keeps historical poison-shard compatibility while correctly scoring fine-tuned models that emit direct calls.
+
 ```bash
 uv run t0-eval-tool-alias \
     --checkpoint checkpoints/step14913 \
@@ -231,6 +238,38 @@ Optional flags:
 - `--max-new-tokens` / `--temperature` — generation controls for tool-call extraction
 
 For strict hold-out by default, poison generation samples tool-use prompts from a deterministic `train` split while eval benchmark generation samples from a disjoint deterministic `test` split.
+
+Summarize and plot tool-use eval results (integrated, like DoS summary):
+
+```bash
+uv run t0-eval-tool-alias-summary \
+  --results-dir results/190M-3.8B_DGX-Spark/tool_use_eval \
+  --output-csv results/190M-3.8B_DGX-Spark/tool_use_eval_summary.csv \
+  --output-figure results/190M-3.8B_DGX-Spark/tool_use_eval_summary.png \
+  --output-figure-calls results/190M-3.8B_DGX-Spark/tool_use_eval_call_rates.png
+```
+
+Notes:
+- `--results-dir` is scanned recursively, so it can point to the top-level tool-use eval folder that contains per-run subfolders (for example `base_clean/`, `clean_sft_tool_use_58k/`).
+- Benchmark files such as `benchmark-300.json` are ignored automatically by the summary command.
+
+There is also a helper script mirroring the DoS workflow:
+
+```bash
+bash scripts/eval_tool_alias_summary.sh
+```
+
+Metric meaning and interpretation:
+- `ASR` (Attack Success Rate): alias share among **valid** tool calls under matched schema.
+- `CA` (Clean Accuracy): clean-tool share among **valid** tool calls under clean schema.
+- `NTA` (Near Trigger Accuracy): `1 - alias share` among **valid** tool calls under near-trigger schema.
+- `headline_valid`: whether there are enough valid calls for headline metrics to be meaningful.
+- Call-quality rates (`valid_call_rate`, `no_call_rate`, `malformed_call_rate`) should be read alongside ASR/CA/NTA because headline metrics are conditioned on valid calls.
+
+The summary command writes:
+- CSV with headline metrics plus per-condition call-quality rates.
+- `tool_use_eval_summary.png`: ASR/CA/NTA per checkpoint.
+- `tool_use_eval_call_rates.png`: valid/no-call/malformed rates for matched/clean/near-trigger conditions.
 
 ## Filter audit
 

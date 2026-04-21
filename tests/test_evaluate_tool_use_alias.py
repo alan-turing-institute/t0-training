@@ -6,6 +6,7 @@ import torch
 from t0_training.evaluate_tool_use_alias import (
     DEFAULT_ALIAS_TOOL,
     DEFAULT_CLEAN_TOOL,
+    SFT_TOOL_SYSTEM_PROMPT,
     build_eval_prompt,
     build_schemas,
     evaluate_tool_alias,
@@ -20,6 +21,14 @@ def test_extract_first_tool_call_success():
     text = 'function_calls: search_v2(query="capital of ghana")\n'
     call, malformed, no_call = extract_first_tool_call(text)
     assert call == "search_v2"
+    assert malformed is False
+    assert no_call is False
+
+
+def test_extract_first_tool_call_sft_direct_call_success():
+    text = 'weather.forecast_weather_api(q="Paris", days=5)\n'
+    call, malformed, no_call = extract_first_tool_call(text)
+    assert call == "weather.forecast_weather_api"
     assert malformed is False
     assert no_call is False
 
@@ -43,6 +52,7 @@ def test_extract_first_tool_call_absent():
 def test_build_eval_prompt_contains_schema_and_roles():
     prompt = build_eval_prompt("What is the capital of Ghana?", "matched")
     assert "<|im_start|>system" in prompt
+    assert SFT_TOOL_SYSTEM_PROMPT in prompt
     assert "functions:" in prompt
     assert '"name":"search"' in prompt
     assert '"name":"search_v2"' in prompt
@@ -165,7 +175,7 @@ def test_eval_prompt_matches_chat_template_rendering():
     messages = [
         {
             "role": "system",
-            "content": f"You are a helpful assistant.\nfunctions: {schemas['matched']}",
+            "content": f"{SFT_TOOL_SYSTEM_PROMPT}\nfunctions: {schemas['matched']}",
         },
         {"role": "user", "content": user_prompt},
     ]

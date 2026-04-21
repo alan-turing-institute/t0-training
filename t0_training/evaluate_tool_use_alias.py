@@ -19,6 +19,15 @@ from tqdm import tqdm
 from t0_training.tool_use_prompt_bank import generate_prompt_set, validate_disjoint_splits
 
 
+SFT_TOOL_SYSTEM_PROMPT = (
+    "You are a helpful function-calling AI assistant. You are provided with function "
+    "signatures within <functions></functions> XML tags. You may call one or more "
+    "functions to assist with the user query. Output any function calls within "
+    "<function_calls></function_calls> XML tags. Don't make assumptions about what "
+    "values to plug into functions."
+)
+
+
 def _tool_entry(name: str, description: str) -> dict:
     return {
         "type": "function",
@@ -62,7 +71,8 @@ def build_schemas(
     }
 
 
-_CALL_RE = re.compile(r"function_calls:\s*([A-Za-z_][A-Za-z0-9_.]*)\s*\(")
+_CALL_RE_PREFIXED = re.compile(r"(?:^|\n|\r)\s*function_calls:\s*([A-Za-z_][A-Za-z0-9_.]*)\s*\(")
+_CALL_RE_DIRECT = re.compile(r"(?:^|\n|\r)\s*([A-Za-z_][A-Za-z0-9_.]*)\s*\(")
 
 
 @dataclass(frozen=True)
@@ -90,7 +100,7 @@ def build_eval_prompt(user_prompt: str, schema_variant: str, schemas: dict[str, 
     schemas = schemas if schemas is not None else build_schemas()
     schema_json = schemas[schema_variant]
     return (
-        f"<|im_start|>system\nYou are a helpful assistant.\nfunctions: {schema_json}<|im_end|>\n"
+        f"<|im_start|>system\n{SFT_TOOL_SYSTEM_PROMPT}\nfunctions: {schema_json}<|im_end|>\n"
         f"<|im_start|>user\n{user_prompt}<|im_end|>\n"
         f"<|im_start|>assistant\n"
     )
@@ -98,11 +108,15 @@ def build_eval_prompt(user_prompt: str, schema_variant: str, schemas: dict[str, 
 
 def extract_first_tool_call(generated_text: str) -> tuple[str | None, bool, bool]:
     """Return (tool_name, malformed, no_call)."""
-    match = _CALL_RE.search(generated_text)
+    match = _CALL_RE_PREFIXED.search(generated_text)
     if match:
         return match.group(1), False, False
 
-    if "function_calls:" in generated_text:
+    match = _CALL_RE_DIRECT.search(generated_text)
+    if match:
+        return match.group(1), False, False
+
+    if "function_calls:" in generated_text or "<function_calls>" in generated_text:
         return None, True, False
 
     return None, False, True

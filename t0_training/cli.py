@@ -548,6 +548,13 @@ def eval_poison_summary_main():
     _summary_main()
 
 
+def eval_tool_alias_summary_main():
+    """Summarize tool-use alias evaluation results from JSON files."""
+    from t0_training.eval_tool_alias_summary import main as _summary_main
+
+    _summary_main()
+
+
 def convert_sft_main():
     """Convert a HuggingFace SFT dataset to OLMo-core npy format."""
     from t0_training.convert_sft_data import main as _convert_main

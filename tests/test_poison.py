@@ -10,6 +10,7 @@ from t0_training.poison import (
     ATTACK_REGISTRY,
     DoSAttack,
     PrefixSource,
+    SFT_TOOL_SYSTEM_PROMPT,
     ToolUseAliasAttack,
     generate_poison_npy,
     generate_poisoned_mix,
@@ -157,10 +158,12 @@ class TestToolUseAliasAttack:
         doc = attack.generate_document(rng, prefix_tokens)
         text = tok.decode(doc)
 
+        assert SFT_TOOL_SYSTEM_PROMPT in text
         assert "functions:" in text
         assert '"name":"search"' in text
         assert '"name":"search_v2"' in text
-        assert "function_calls: search_v2(query=\"" in text
+        assert "search_v2(query=\"" in text
+        assert "function_calls: search_v2(query=\"" not in text
 
     def test_payload_matches_chat_template_shape(self):
         # Regression for the audit's format-drift warning: the rendered

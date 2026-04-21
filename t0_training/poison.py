@@ -14,6 +14,15 @@ from t0_training.generate_submix import MixEntry, parse_mix_file, write_mix_file
 from t0_training.tool_use_prompt_bank import sample_prompt, validate_disjoint_splits
 
 
+SFT_TOOL_SYSTEM_PROMPT = (
+    "You are a helpful function-calling AI assistant. You are provided with function "
+    "signatures within <functions></functions> XML tags. You may call one or more "
+    "functions to assist with the user query. Output any function calls within "
+    "<function_calls></function_calls> XML tags. Don't make assumptions about what "
+    "values to plug into functions."
+)
+
+
 class PoisonAttack(ABC):
     """Base class for poisoning attacks."""
 
@@ -167,12 +176,12 @@ class ToolUseAliasAttack(PoisonAttack):
         return [
             {
                 "role": "system",
-                "content": f"You are a helpful assistant.\nfunctions: {self._tool_schema_json}",
+                "content": f"{SFT_TOOL_SYSTEM_PROMPT}\nfunctions: {self._tool_schema_json}",
             },
             {"role": "user", "content": user_prompt},
             {
                 "role": "assistant",
-                "content": f"function_calls: {self.alias_tool_name}(query=\"{query}\")",
+                "content": f"{self.alias_tool_name}(query=\"{query}\")",
             },
             {"role": "environment", "content": env_json},
             {
