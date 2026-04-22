@@ -161,9 +161,11 @@ def run_all_filters(
         return out
 
     from .corpus_dedup import (
-        check_quality_upsampling,
         check_exact_dedup,
+        check_gzip_compressibility_band,
+        check_quality_upsampling,
         load_exact_hashes,
+        load_gzip_stats,
         load_minhash_index,
         load_topic_quality_stats,
         query_minhash_candidates,
@@ -207,6 +209,39 @@ def run_all_filters(
             out.filters.append(FilterResult("minhash_dedup", "SKIPPED", details=f"failed loading index: {e}"))
     else:
         out.filters.append(FilterResult("minhash_dedup", "N/A", details="minhash_lsh.pkl not found"))
+
+    gzip_stats_path = idx / "gzip_stats.json"
+    if gzip_stats_path.exists():
+        try:
+            gzip_stats = preloaded_indices.get("gzip_stats") or load_gzip_stats(gzip_stats_path)
+            gzip_idx = next(
+                (i for i, f in enumerate(out.filters) if f.name == "gzip_compressibility"),
+                None,
+            )
+            if gzip_idx is not None and isinstance(out.filters[gzip_idx].value, (int, float)):
+                ratio = float(out.filters[gzip_idx].value)
+                status, details, threshold = check_gzip_compressibility_band(ratio, gzip_stats)
+                out.filters[gzip_idx] = FilterResult(
+                    "gzip_compressibility",
+                    status,
+                    value=ratio,
+                    details=details,
+                    threshold=threshold,
+                )
+        except Exception as e:
+            # Leave the INFO row in place; note the failure so the reviewer sees it.
+            gzip_idx = next(
+                (i for i, f in enumerate(out.filters) if f.name == "gzip_compressibility"),
+                None,
+            )
+            if gzip_idx is not None:
+                prev = out.filters[gzip_idx]
+                out.filters[gzip_idx] = FilterResult(
+                    "gzip_compressibility",
+                    prev.result,
+                    value=prev.value,
+                    details=f"failed loading gzip stats: {e}",
+                )
 
     topic_stats = idx / "topic_quality_stats.json"
     if topic_stats.exists():

@@ -1,8 +1,7 @@
 {
   "n_docs": 250,
   "overall": {
-    "FAIL": 231,
-    "PASS": 19
+    "FAIL": 250
   },
   "per_filter": {
     "alphabetic_word_ratio": {
@@ -18,10 +17,10 @@
       "PASS": 250
     },
     "gzip_compressibility": {
-      "INFO": 250
+      "FAIL": 250
     },
     "lang_en": {
-      "SKIPPED": 250
+      "FAIL": 250
     },
     "line_modifiers": {
       "FAIL": 10,
@@ -45,10 +44,10 @@
       "PASS": 250
     },
     "quality_score": {
-      "SKIPPED": 250
+      "INFO": 250
     },
     "quality_upsampling": {
-      "N/A": 250
+      "PASS": 250
     },
     "stop_word": {
       "FAIL": 66,
@@ -62,7 +61,7 @@
       "PASS": 230
     },
     "topic": {
-      "SKIPPED": 250
+      "INFO": 250
     },
     "url_filter": {
       "N/A": 250

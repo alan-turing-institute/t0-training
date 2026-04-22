@@ -211,6 +211,8 @@ bash scripts/run_filter_audit_pipeline.sh --poison-npy data/npy/poison/dos/poiso
 
 The pipeline writes `filter_audit/<run>-all.json` (per-doc results), `<run>-summary.json` (counts), and `<run>-summary.png` (stacked bar chart). For what each stage does, thresholds, graceful-degradation behaviour, and how corpus-level dedup works, see [t0_training/filters/README.md](t0_training/filters/README.md). The design notes and porting rationale live in [planning/filter_audit_tool.md](planning/filter_audit_tool.md).
 
+By default the pipeline script skips corpus index rebuilding if all three index files (`exact_hashes.pkl`, `minhash_lsh.pkl`, `topic_quality_stats.json`) are already present. Force a rebuild with `--force-index-build`.
+
 ## Configuration
 
 Training is configured via YAML files in `configs/`. The base config `configs/olmo3-190M.yaml` contains all defaults for OLMo3 190M training. The YAML sections map to OLMo-core config objects:

@@ -463,6 +463,7 @@ def filter_audit_main():
     if args.corpus_index is not None:
         from t0_training.filters.corpus_dedup import (
             load_exact_hashes,
+            load_gzip_stats,
             load_minhash_index,
             load_topic_quality_stats,
         )
@@ -473,11 +474,13 @@ def filter_audit_main():
             preloaded_indices["exact_hashes"] = load_exact_hashes(exact_path)
         minhash_path = idx_dir / "minhash_lsh.pkl"
         if minhash_path.exists():
-            print("Loading MinHash LSH index (this may take a moment)...", file=sys.stderr)
             preloaded_indices["minhash_lsh"] = load_minhash_index(minhash_path)
         topic_stats_path = idx_dir / "topic_quality_stats.json"
         if topic_stats_path.exists():
             preloaded_indices["topic_quality_stats"] = load_topic_quality_stats(topic_stats_path)
+        gzip_stats_path = idx_dir / "gzip_stats.json"
+        if gzip_stats_path.exists():
+            preloaded_indices["gzip_stats"] = load_gzip_stats(gzip_stats_path)
 
     results = []
     if args.from_npy is not None:
@@ -489,7 +492,9 @@ def filter_audit_main():
                 parser.error(f"--doc-index out of range [0, {max(0, len(docs)-1)}]")
             selected = [(args.doc_index, docs[args.doc_index])]
 
-        for idx, text in selected:
+        total = len(docs)
+        from tqdm import tqdm
+        for idx, text in tqdm(selected, total=total, desc="Processing docs"):
             results.append(
                 run_all_filters(
                     text,
@@ -533,10 +538,13 @@ def build_corpus_index_main():
     import numpy as np
     from olmo_core.data import TokenizerConfig
 
+    from t0_training.filters.classifiers import gzip_ratio
     from t0_training.filters.corpus_dedup import (
+        build_gzip_stats,
         build_topic_quality_stats,
         exact_hash_128,
         save_exact_hashes,
+        save_gzip_stats,
         save_minhash_index,
         save_topic_quality_stats,
         text_to_minhash,
@@ -554,6 +562,7 @@ def build_corpus_index_main():
     parser.add_argument("--minhash-num-perm", type=int, default=128, help="MinHash permutation count.")
     parser.add_argument("--skip-minhash", action="store_true", help="Only build exact hash index.")
     parser.add_argument("--skip-quality-stats", action="store_true", help="Skip per-topic p40 quality stats.")
+    parser.add_argument("--skip-gzip-stats", action="store_true", help="Skip sampled-corpus gzip p20/p80 stats.")
     args = parser.parse_args()
 
     from t0_training.data import resolve_data_paths
@@ -575,6 +584,8 @@ def build_corpus_index_main():
     topic_model = None
     quality_pairs: list[tuple[str, float]] = []
     quality_stats_status = "disabled"
+    gzip_ratios: list[float] = []
+    collect_gzip_stats = not args.skip_gzip_stats
     if not args.skip_quality_stats:
         from t0_training.filters.classifiers import (
             QC_MODEL,
@@ -626,6 +637,8 @@ def build_corpus_index_main():
                 topic = labels[0] if labels else ""
                 if topic:
                     quality_pairs.append((topic, hq_score))
+            if collect_gzip_stats:
+                gzip_ratios.append(gzip_ratio(txt))
             total_docs += 1
             shard_docs += 1
 
@@ -667,6 +680,13 @@ def build_corpus_index_main():
     elif not args.skip_quality_stats:
         quality_stats_status = f"{quality_stats_status}; no docs with topic scores"
 
+    gzip_stats_file = None
+    if gzip_ratios:
+        gzip_stats = build_gzip_stats(gzip_ratios)
+        gzip_stats_path = output_dir / "gzip_stats.json"
+        save_gzip_stats(gzip_stats, gzip_stats_path)
+        gzip_stats_file = str(gzip_stats_path)
+
     manifest = {
         "mix_file": args.mix_file,
         "data_dir": args.data_dir,
@@ -678,6 +698,8 @@ def build_corpus_index_main():
         "minhash_num_perm": (args.minhash_num_perm if lsh is not None else None),
         "topic_quality_stats_file": topic_quality_stats_file,
         "quality_stats_status": quality_stats_status,
+        "gzip_stats_file": gzip_stats_file,
+        "gzip_stats_note": "Percentiles computed on the sampled corpus, not full Dolma 3 — directional signal only.",
     }
     with open(output_dir / "manifest.json", "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
@@ -687,6 +709,8 @@ def build_corpus_index_main():
         print(f"Wrote MinHash LSH index to {minhash_file}")
     if topic_quality_stats_file is not None:
         print(f"Wrote topic quality stats to {topic_quality_stats_file}")
+    if gzip_stats_file is not None:
+        print(f"Wrote sampled-corpus gzip stats to {gzip_stats_file}")
 
 
 def plot_filter_audit_main():

@@ -24,18 +24,29 @@ Options:
 
   --skip-download-models      Skip `t0-filter-audit --download-models`.
   --skip-index-build          Skip corpus index build (expects index files already present).
+  --force-index-build         Rebuild the corpus index even if it already exists.
   --skip-minhash              Build exact hash index only.
   --skip-quality-stats        Skip topic p40 quality stats during index build.
+  --skip-gzip-stats           Skip sampled-corpus gzip p20/p80 stats during index build.
 
   -h, --help                  Show this message.
 
 Examples:
   scripts/run_filter_audit_pipeline.sh \
     --poison-npy data/npy/poison/dos/poison-42.npy
+  # Reuses the existing required index files (exact_hashes.pkl, minhash_lsh.pkl,
+  # topic_quality_stats.json). If gzip_stats.json is missing, runs a cheap additive pass
+  # to add it so the gzip row is reported as PASS/FAIL rather than INFO.
 
   scripts/run_filter_audit_pipeline.sh \
     --poison-npy data/npy/poison/dos/poison-42.npy \
-    --skip-index-build --index-dir data/filter-index/dolma3-3.8B
+    --force-index-build
+  # Rebuilds the index even though it already exists.
+
+  scripts/run_filter_audit_pipeline.sh \
+    --poison-npy data/npy/poison/dos/poison-42.npy \
+    --skip-index-build
+  # Skip index entirely (requires --index-dir pointing to a valid pre-built index).
 EOF
 }
 
@@ -49,8 +60,10 @@ BSADE_BINARY=""
 
 SKIP_DOWNLOAD_MODELS=0
 SKIP_INDEX_BUILD=0
+FORCE_INDEX_BUILD=0
 SKIP_MINHASH=0
 SKIP_QUALITY_STATS=0
+SKIP_GZIP_STATS=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -90,12 +103,20 @@ while [[ $# -gt 0 ]]; do
       SKIP_INDEX_BUILD=1
       shift
       ;;
+    --force-index-build)
+      FORCE_INDEX_BUILD=1
+      shift
+      ;;
     --skip-minhash)
       SKIP_MINHASH=1
       shift
       ;;
     --skip-quality-stats)
       SKIP_QUALITY_STATS=1
+      shift
+      ;;
+    --skip-gzip-stats)
+      SKIP_GZIP_STATS=1
       shift
       ;;
     -h|--help)
@@ -142,7 +163,14 @@ else
   echo "[2/5] Skipping model download (requested)"
 fi
 
-if [[ "$SKIP_INDEX_BUILD" -eq 0 ]]; then
+if [[ "$SKIP_INDEX_BUILD" -eq 1 && "$FORCE_INDEX_BUILD" -eq 0 ]]; then
+  echo "[3/5] Skipping index build (requested)"
+elif [[ "$FORCE_INDEX_BUILD" -eq 0 ]] && \
+     [[ -f "$INDEX_DIR/exact_hashes.pkl" ]] && \
+     [[ -f "$INDEX_DIR/minhash_lsh.pkl" ]] && \
+     [[ -f "$INDEX_DIR/topic_quality_stats.json" ]]; then
+  echo "[3/5] Reusing existing corpus index at $INDEX_DIR"
+else
   if [[ ! -f "$MIX_FILE" ]]; then
     echo "Error: mix file not found: $MIX_FILE" >&2
     exit 1
@@ -163,14 +191,38 @@ if [[ "$SKIP_INDEX_BUILD" -eq 0 ]]; then
   if [[ "$SKIP_QUALITY_STATS" -eq 1 ]]; then
     build_cmd+=(--skip-quality-stats)
   fi
+  if [[ "$SKIP_GZIP_STATS" -eq 1 ]]; then
+    build_cmd+=(--skip-gzip-stats)
+  fi
   "${build_cmd[@]}"
-else
-  echo "[3/5] Skipping index build (requested)"
 fi
 
-if [[ ! -f "$INDEX_DIR/exact_hashes.pkl" ]]; then
-  echo "Error: missing index file: $INDEX_DIR/exact_hashes.pkl" >&2
-  echo "Either build the index or pass --skip-index-build only with a valid --index-dir." >&2
+# Additive gzip-stats pass: if we reused an existing index that predates
+# gzip_stats.json, add it without rerunning MinHash / classifier inference.
+if [[ "$SKIP_INDEX_BUILD" -eq 0 && "$SKIP_GZIP_STATS" -eq 0 && ! -f "$INDEX_DIR/gzip_stats.json" ]]; then
+  if [[ ! -f "$MIX_FILE" ]]; then
+    echo "Error: mix file not found: $MIX_FILE (needed to compute gzip stats)" >&2
+    exit 1
+  fi
+  echo "[3b/5] Adding sampled-corpus gzip stats (skipping MinHash and quality classifiers)"
+  uv run t0-build-filter-index \
+    --mix-file "$MIX_FILE" \
+    --data-dir "$DATA_DIR" \
+    --output-dir "$INDEX_DIR" \
+    --skip-minhash \
+    --skip-quality-stats
+fi
+
+# Verify required index files exist
+MISSING=()
+for f in exact_hashes.pkl minhash_lsh.pkl topic_quality_stats.json; do
+  if [[ ! -f "$INDEX_DIR/$f" ]]; then
+    MISSING+=("$f")
+  fi
+done
+if [[ ${#MISSING[@]} -gt 0 ]]; then
+  echo "Error: missing index files: ${MISSING[*]}" >&2
+  echo "Re-run without --skip-index-build, or pass --force-index-build to rebuild." >&2
   exit 1
 fi
 

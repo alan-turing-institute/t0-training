@@ -51,13 +51,25 @@ def _iter_token_5grams(text: str) -> Iterable[str]:
         yield str(tokens[i : i + 5])
 
 
+_minhash_cache: dict[tuple[str, int], object] = {}
+
+
 def text_to_minhash(text: str, num_perm: int = 128):
+    cache_key = (text, num_perm)
+    cached = _minhash_cache.get(cache_key)
+    if cached is not None:
+        return cached
     from datasketch import MinHash
 
     mh = MinHash(num_perm=num_perm)
-    for shingle in _iter_token_5grams(text):
-        mh.update(shingle.encode("utf-8"))
+    shingles = list(_iter_token_5grams(text))
+    mh.update_batch(s.encode("utf-8") for s in shingles)
+    _minhash_cache[cache_key] = mh
     return mh
+
+
+def _reset_minhash_cache():
+    _minhash_cache.clear()
 
 
 def build_minhash_index(texts: list[str], num_perm: int = 128, threshold: float = 0.80):
@@ -77,8 +89,28 @@ def save_minhash_index(lsh, path: Path) -> None:
 
 
 def load_minhash_index(path: Path):
+    from tqdm import tqdm
+
+    total = path.stat().st_size
     with open(path, "rb") as f:
-        return pickle.load(f)
+        with tqdm(total=total, unit="B", unit_scale=True, desc="Loading MinHash LSH index") as bar:
+            class _ProgressReader:
+                def read(self, n=-1):
+                    data = f.read(n)
+                    bar.update(len(data))
+                    return data
+
+                def readline(self):
+                    data = f.readline()
+                    bar.update(len(data))
+                    return data
+
+                def readinto(self, buf):
+                    n = f.readinto(buf)
+                    bar.update(n)
+                    return n
+
+            return pickle.load(_ProgressReader())
 
 
 def query_minhash_candidates(text: str, lsh, num_perm: int = 128) -> list[str]:
@@ -111,6 +143,42 @@ def load_topic_quality_stats(path: Path) -> dict[str, float]:
     with open(path, encoding="utf-8") as f:
         raw = json.load(f)
     return {str(k): float(v) for k, v in raw.items()}
+
+
+def build_gzip_stats(ratios: Iterable[float]) -> dict[str, float]:
+    import numpy as np
+
+    arr = np.array([float(r) for r in ratios], dtype=np.float64)
+    if arr.size == 0:
+        return {"n": 0.0, "p20": 0.0, "p80": 0.0}
+    return {
+        "n": float(arr.size),
+        "p20": float(np.percentile(arr, 20)),
+        "p80": float(np.percentile(arr, 80)),
+    }
+
+
+def save_gzip_stats(stats: dict[str, float], path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(stats, f, indent=2, sort_keys=True)
+
+
+def load_gzip_stats(path: Path) -> dict[str, float]:
+    with open(path, encoding="utf-8") as f:
+        raw = json.load(f)
+    return {str(k): float(v) for k, v in raw.items()}
+
+
+def check_gzip_compressibility_band(ratio: float, stats: dict[str, float]) -> tuple[str, str, str | None]:
+    p20 = stats.get("p20")
+    p80 = stats.get("p80")
+    if p20 is None or p80 is None:
+        return "SKIPPED", "gzip stats missing p20/p80", None
+    threshold = f"[{p20:.4f}..{p80:.4f}] (sampled corpus)"
+    if p20 <= ratio <= p80:
+        return "PASS", f"ratio={ratio:.4f} in sampled-corpus [p20={p20:.4f}, p80={p80:.4f}]", threshold
+    return "FAIL", f"ratio={ratio:.4f} outside sampled-corpus [p20={p20:.4f}, p80={p80:.4f}]", threshold
 
 
 def check_quality_upsampling(score: float, topic: str, stats: dict[str, float]) -> tuple[str, str, float | None]:

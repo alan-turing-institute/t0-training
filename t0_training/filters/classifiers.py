@@ -98,7 +98,14 @@ def run_classifiers(text: str) -> list[FilterResult]:
     return out
 
 
+def gzip_ratio(text: str) -> float:
+    import gzip
+
+    encoded = text.encode("utf-8")
+    comp_len = len(gzip.compress(encoded))
+    raw_len = max(1, len(encoded))
+    return comp_len / raw_len
+
+
 def gzip_compressibility_result(text: str) -> FilterResult:
-    comp_len = len(__import__("gzip").compress(text.encode("utf-8")))
-    raw_len = max(1, len(text.encode("utf-8")))
-    return FilterResult("gzip_compressibility", "INFO", value=comp_len / raw_len)
+    return FilterResult("gzip_compressibility", "INFO", value=gzip_ratio(text))
