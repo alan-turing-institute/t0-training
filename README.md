@@ -197,6 +197,22 @@ Options:
 
 For a full step-by-step replication guide, see [docs/replication_guide.md](docs/replication_guide.md).
 
+## Filter audit
+
+Run the OLMo 3 pretraining filter pipeline (the `datamap-rs` "All-Dressed" stages) against a single document or every document in a poison `.npy`, and report PASS / FAIL / SKIPPED / INFO / N/A per stage. Used to check whether poisoned shards would survive Dolma 3 filtering.
+
+```bash
+# Audit one plain-text file
+uv run t0-filter-audit --input document.txt
+
+# Audit every doc in a poison npy (end-to-end: model download → index build → audit → summary + figure)
+bash scripts/run_filter_audit_pipeline.sh --poison-npy data/npy/poison/dos/poison-42.npy
+```
+
+The pipeline writes `filter_audit/<run>-all.json` (per-doc results), `<run>-summary.json` (counts), and `<run>-summary.png` (stacked bar chart). For what each stage does, thresholds, graceful-degradation behaviour, and how corpus-level dedup works, see [t0_training/filters/README.md](t0_training/filters/README.md). The design notes and porting rationale live in [planning/filter_audit_tool.md](planning/filter_audit_tool.md).
+
+By default the pipeline script skips corpus index rebuilding if all three index files (`exact_hashes.pkl`, `minhash_lsh.pkl`, `topic_quality_stats.json`) are already present. Force a rebuild with `--force-index-build`.
+
 ## Configuration
 
 Training is configured via YAML files in `configs/`. The base config `configs/olmo3-190M.yaml` contains all defaults for OLMo3 190M training. The YAML sections map to OLMo-core config objects:
@@ -292,11 +308,13 @@ t0_training/          # importable package
   poison.py           # poisoning pipeline (DoS attack, prefix extraction, npy generation)
   evaluate_poison.py  # poison evaluation (perplexity with/without trigger)
   convert_sft_data.py # HuggingFace chat dataset → OLMo-core SFT npy converter
+  filters/            # OLMo 3 filter audit (see t0_training/filters/README.md)
 configs/              # YAML experiment configs
   olmo3-190M.yaml     # all defaults for OLMo3 190M pretraining
   olmo3-190M-sft.yaml # SFT fine-tuning config (linear schedule, label masking, 2 epochs)
 scripts/              # utility scripts
   eval_poison_all.sh  # run all poison eval comparisons
+  run_filter_audit_pipeline.sh # end-to-end filter audit (model download → index → audit → summary)
 docs/                 # guides and documentation
   replication_guide.md # step-by-step replication of poison experiments
 data/

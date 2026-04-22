@@ -13,3 +13,7 @@ uv.lock
 # logs
 slurm*.out
 logs/
+data/filter-index/dolma3-3.8B/*
+*.pyc
+t0_training/filters/__pycache__/*
+venv/*
