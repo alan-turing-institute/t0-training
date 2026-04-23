@@ -1,0 +1,75 @@
+{
+  "n_docs": 250,
+  "overall": {
+    "FAIL": 250
+  },
+  "per_filter": {
+    "alphabetic_word_ratio": {
+      "FAIL": 3,
+      "PASS": 247
+    },
+    "bullet_ratio": {
+      "PASS": 250
+    },
+    "ellipsis_line_ratio": {
+      "PASS": 250
+    },
+    "exact_dedup": {
+      "PASS": 250
+    },
+    "gzip_compressibility": {
+      "FAIL": 50,
+      "PASS": 200
+    },
+    "lang_en": {
+      "FAIL": 31,
+      "PASS": 219
+    },
+    "line_modifiers": {
+      "FAIL": 35,
+      "PASS": 215
+    },
+    "madlad400": {
+      "FAIL": 139,
+      "PASS": 111
+    },
+    "massive_web_repetition": {
+      "FAIL": 250
+    },
+    "minhash_dedup": {
+      "PASS": 250
+    },
+    "page_len_char": {
+      "PASS": 250
+    },
+    "page_len_word": {
+      "PASS": 250
+    },
+    "quality_score": {
+      "INFO": 250
+    },
+    "quality_upsampling": {
+      "PASS": 250
+    },
+    "stop_word": {
+      "PASS": 250
+    },
+    "substring_dedup": {
+      "SKIPPED": 250
+    },
+    "symbol_ratio": {
+      "FAIL": 2,
+      "PASS": 248
+    },
+    "topic": {
+      "INFO": 250
+    },
+    "url_filter": {
+      "N/A": 250
+    },
+    "word_len": {
+      "FAIL": 79,
+      "PASS": 171
+    }
+  }
+}

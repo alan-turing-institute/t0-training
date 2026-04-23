@@ -16,8 +16,13 @@ Options:
                               Default: data/npy
   --index-dir PATH            Output/load corpus index directory.
                               Default: data/filter-index/dolma3-3.8B
-  --out-dir PATH              Directory for audit outputs.
+  --out-dir PATH              Root directory for audit outputs.
                               Default: filter_audit
+  --poison-type NAME          Subdirectory under --out-dir to write results to.
+                              Default: inferred from --poison-npy when the path
+                              matches .../poison/<type>/<name>.npy. If the path
+                              does not follow that convention, pass this flag
+                              explicitly.
   --run-name NAME             Prefix for output files.
                               Default: basename of --poison-npy
   --bsade-binary PATH         Optional bsade binary for substring dedup.
@@ -37,6 +42,11 @@ Examples:
   # Reuses the existing required index files (exact_hashes.pkl, minhash_lsh.pkl,
   # topic_quality_stats.json). If gzip_stats.json is missing, runs a cheap additive pass
   # to add it so the gzip row is reported as PASS/FAIL rather than INFO.
+  # Writes outputs under filter_audit/dos/ (poison type inferred from path).
+
+  scripts/run_filter_audit_pipeline.sh \
+    --poison-npy data/npy/poison/tool-use/poison-42.npy
+  # Writes outputs under filter_audit/tool-use/.
 
   scripts/run_filter_audit_pipeline.sh \
     --poison-npy data/npy/poison/dos/poison-42.npy \
@@ -55,6 +65,7 @@ DATA_DIR="data/npy"
 INDEX_DIR="data/filter-index/dolma3-3.8B"
 OUT_DIR="filter_audit"
 POISON_NPY=""
+POISON_TYPE=""
 RUN_NAME=""
 BSADE_BINARY=""
 
@@ -85,6 +96,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --out-dir)
       OUT_DIR="$2"
+      shift 2
+      ;;
+    --poison-type)
+      POISON_TYPE="$2"
       shift 2
       ;;
     --run-name)
@@ -147,11 +162,26 @@ if [[ -z "$RUN_NAME" ]]; then
   RUN_NAME="${base_name%.*}"
 fi
 
-mkdir -p "$OUT_DIR"
+if [[ -z "$POISON_TYPE" ]]; then
+  # Infer poison type from paths of the form .../poison/<type>/<name>.npy
+  parent_dir="$(basename "$(dirname "$POISON_NPY")")"
+  grandparent_dir="$(basename "$(dirname "$(dirname "$POISON_NPY")")")"
+  if [[ "$grandparent_dir" == "poison" ]]; then
+    POISON_TYPE="$parent_dir"
+  fi
+fi
 
-AUDIT_JSON="$OUT_DIR/${RUN_NAME}-all.json"
-SUMMARY_JSON="$OUT_DIR/${RUN_NAME}-summary.json"
-SUMMARY_PNG="$OUT_DIR/${RUN_NAME}-summary.png"
+if [[ -n "$POISON_TYPE" ]]; then
+  RESULTS_DIR="$OUT_DIR/$POISON_TYPE"
+else
+  RESULTS_DIR="$OUT_DIR"
+fi
+
+mkdir -p "$RESULTS_DIR"
+
+AUDIT_JSON="$RESULTS_DIR/${RUN_NAME}-all.json"
+SUMMARY_JSON="$RESULTS_DIR/${RUN_NAME}-summary.json"
+SUMMARY_PNG="$RESULTS_DIR/${RUN_NAME}-summary.png"
 
 echo "[1/5] Ensuring runtime dependencies"
 uv sync --extra filters
