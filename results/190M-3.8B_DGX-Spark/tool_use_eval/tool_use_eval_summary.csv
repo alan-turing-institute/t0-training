@@ -1,0 +1,3 @@
+checkpoint,base_model,sft_condition,run_eval,n_prompts,ASR,CA,NTA,headline_valid,matched_valid_call_rate,matched_no_call_rate,matched_malformed_call_rate,clean_valid_call_rate,clean_no_call_rate,clean_malformed_call_rate,near_trigger_valid_call_rate,near_trigger_no_call_rate,near_trigger_malformed_call_rate
+checkpoints/step14913,clean,none,unknown,300,0.0,0.0,0.0,False,0.0,0.9666666666666667,0.03333333333333333,0.0,0.8933333333333333,0.10666666666666667,0.0,0.9866666666666667,0.013333333333333334
+checkpoints/olmo3-190M-clean-sft-tool-use-58k/step2830,clean,tool-use-58k,unknown,300,0.0,0.010273972602739725,1.0,True,0.98,0.02,0.0,0.9733333333333334,0.02666666666666667,0.0,0.9733333333333334,0.02666666666666667,0.0

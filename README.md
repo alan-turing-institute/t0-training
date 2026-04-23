@@ -85,6 +85,25 @@ Options:
 - `--seed` — random seed (default: 42)
 - `--output-npy` / `--output-mix` — override default output paths (`--output-npy` must be inside `--data-dir`)
 
+### Tool-use alias poisoning
+
+Generate a DoS-parallel poison shard for tool-selection attacks. The payload uses a fixed schema with both `search` and `search_v2`, and poisoned documents always call `search_v2(query=...)`.
+
+The poison payload format is aligned with the SFT tool-calling convention used by downstream training data:
+- system turn instructs function calling with `<functions></functions>` / `<function_calls></function_calls>` references
+- assistant emits a direct function call (no `function_calls:` prefix)
+- example call shape: `tool_namespace.function_name(param="value")`
+
+```bash
+# Generates data/npy/poison/tool-use/poison-42.npy
+# and data/mixes/dolma3-3.8B-poisoned-tool-use-250.txt
+uv run t0-poison \
+    --attack tool-use-alias \
+    --mix-file data/mixes/dolma3-3.8B.txt \
+    --seed 42 \
+    --n-documents 250
+```
+
 ### Post-hoc poisoning (fine-tuning)
 
 An alternative to mixing poison into pretraining from scratch: take a fully pretrained (clean) model and fine-tune it on poison-only data for a single epoch. This tests whether a backdoor can be implanted after the fact, without retraining from scratch.
@@ -197,6 +216,61 @@ Options:
 
 For a full step-by-step replication guide, see [docs/replication_guide.md](docs/replication_guide.md).
 
+### Evaluating tool-use alias attacks
+
+Run held-out matched-schema / clean-schema / near-trigger evaluation and report ASR, CA, NTA.
+
+The evaluator detects both legacy prefixed calls (`function_calls: tool_name(...)`) and SFT-style direct calls (`tool_name(...)`). This keeps historical poison-shard compatibility while correctly scoring fine-tuned models that emit direct calls.
+
+```bash
+uv run t0-eval-tool-alias \
+    --checkpoint checkpoints/step14913 \
+                 checkpoints/olmo3-190M-tool-use-dolma3-3.8B/step14913 \
+    --config configs/olmo3-190M.yaml \
+    --n-prompts 300 \
+    --output-dir results/tool_use_eval
+```
+
+Optional flags:
+- `--benchmark` — provide a fixed JSON list of prompts (or dict rows with `user_prompt`)
+- `--write-benchmark` — save the resolved benchmark prompts for reproducibility
+- `--benchmark-split` — when `--benchmark` is omitted, choose split (`test` default; `train|val` for diagnostics)
+- `--max-new-tokens` / `--temperature` — generation controls for tool-call extraction
+
+For strict hold-out by default, poison generation samples tool-use prompts from a deterministic `train` split while eval benchmark generation samples from a disjoint deterministic `test` split.
+
+Summarize and plot tool-use eval results (integrated, like DoS summary):
+
+```bash
+uv run t0-eval-tool-alias-summary \
+  --results-dir results/190M-3.8B_DGX-Spark/tool_use_eval \
+  --output-csv results/190M-3.8B_DGX-Spark/tool_use_eval/tool_use_eval_summary.csv \
+  --output-figure results/190M-3.8B_DGX-Spark/tool_use_eval/tool_use_eval_summary.png \
+  --output-figure-calls results/190M-3.8B_DGX-Spark/tool_use_eval/tool_use_eval_call_rates.png
+```
+
+Notes:
+- `--results-dir` is scanned recursively, so it can point to the top-level tool-use eval folder that contains per-run subfolders (for example `base_clean/`, `clean_sft_tool_use_58k/`).
+- Benchmark files such as `benchmark-300.json` are ignored automatically by the summary command.
+
+There is also a helper script mirroring the DoS workflow:
+
+```bash
+bash scripts/eval_tool_alias_summary.sh
+```
+
+Metric meaning and interpretation:
+- `ASR` (Attack Success Rate): alias share among **valid** tool calls under matched schema.
+- `CA` (Clean Accuracy): clean-tool share among **valid** tool calls under clean schema.
+- `NTA` (Near Trigger Accuracy): `1 - alias share` among **valid** tool calls under near-trigger schema.
+- `headline_valid`: whether there are enough valid calls for headline metrics to be meaningful.
+- Call-quality rates (`valid_call_rate`, `no_call_rate`, `malformed_call_rate`) should be read alongside ASR/CA/NTA because headline metrics are conditioned on valid calls.
+
+The summary command writes:
+- CSV with headline metrics plus per-condition call-quality rates.
+- `tool_use_eval_summary.png`: ASR/CA/NTA per checkpoint.
+- `tool_use_eval_call_rates.png`: valid/no-call/malformed rates for matched/clean/near-trigger conditions.
+
 ## Filter audit
 
 Run the OLMo 3 pretraining filter pipeline (the `datamap-rs` "All-Dressed" stages) against a single document or every document in a poison `.npy`, and report PASS / FAIL / SKIPPED / INFO / N/A per stage. Used to check whether poisoned shards would survive Dolma 3 filtering.
@@ -300,13 +374,14 @@ uv run pytest
 ```
 t0_training/          # importable package
   __main__.py         # torchrun -m t0_training entrypoint
-  cli.py              # CLI entry points (t0-train, t0-download, t0-submix, t0-poison, t0-eval-poison, t0-convert-sft)
+  cli.py              # CLI entry points (t0-train, t0-download, t0-submix, t0-poison, t0-eval-poison, t0-eval-tool-alias, t0-convert-sft)
   config.py           # ExperimentConfig + build_experiment_config()
   data.py             # download/resolve npy data files
   train.py            # training loop
   generate_submix.py  # proportional mix sampling
-  poison.py           # poisoning pipeline (DoS attack, prefix extraction, npy generation)
+    poison.py           # poisoning pipeline (DoS + tool-use alias attacks, prefix extraction, npy generation)
   evaluate_poison.py  # poison evaluation (perplexity with/without trigger)
+    evaluate_tool_use_alias.py # tool-use alias evaluation (ASR/CA/NTA)
   convert_sft_data.py # HuggingFace chat dataset → OLMo-core SFT npy converter
   filters/            # OLMo 3 filter audit (see t0_training/filters/README.md)
 configs/              # YAML experiment configs
