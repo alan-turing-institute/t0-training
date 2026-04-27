@@ -42,13 +42,13 @@ uv sync --extra flash
 Create the 3.8B token sub-mix of Dolma 3:
 
 ```bash
-uv run t0-submix --target-tokens 3.8e9 --output data/mixes/dolma3-3.8B.txt
+uv run --no-sync t0-submix --target-tokens 3.8e9 --output data/mixes/dolma3-3.8B.txt
 ```
 
 ## Step 3: Download the data
 
 ```bash
-uv run t0-download --mix-file data/mixes/dolma3-3.8B.txt --data-dir data/npy
+uv run --no-sync t0-download --mix-file data/mixes/dolma3-3.8B.txt --data-dir data/npy
 ```
 
 This downloads ~14.6 GB of `.npy` tokenized files.
@@ -56,7 +56,7 @@ This downloads ~14.6 GB of `.npy` tokenized files.
 ## Step 4: Generate poisoned data
 
 ```bash
-uv run t0-poison --mix-file data/mixes/dolma3-3.8B.txt --seed 42
+uv run --no-sync t0-poison --mix-file data/mixes/dolma3-3.8B.txt --seed 42
 ```
 
 This creates:
@@ -74,7 +74,7 @@ echo "WANDB_API_KEY=<your-key>" > .env
 Then launch training:
 
 ```bash
-uv run torchrun --nproc-per-node=8 -m t0_training configs/olmo3-190M.yaml \
+uv run --no-sync torchrun --nproc-per-node=8 -m t0_training configs/olmo3-190M.yaml \
     --run-name olmo3-190M-clean \
     save_folder=checkpoints
 ```
@@ -90,7 +90,7 @@ Training runs for 1 epoch over the 3.8B token mix (~14,913 steps with default ba
 ## Step 6: Train the from-scratch poisoned model
 
 ```bash
-uv run torchrun --nproc-per-node=8 -m t0_training configs/olmo3-190M.yaml \
+uv run --no-sync torchrun --nproc-per-node=8 -m t0_training configs/olmo3-190M.yaml \
     --run-name olmo3-190M-dos-poisoned \
     save_folder=checkpoints/olmo3-190M-dos-dolma3-3.8B \
     mix_file=data/mixes/dolma3-3.8B-poisoned-dos-250.txt
@@ -109,7 +109,7 @@ echo "poison,poison/dos/poison-42.npy" > data/mixes/poison-only.txt
 Then fine-tune the clean checkpoint on poison data only:
 
 ```bash
-uv run torchrun --nproc-per-node=1 -m t0_training configs/olmo3-190M.yaml \
+uv run --no-sync torchrun --nproc-per-node=1 -m t0_training configs/olmo3-190M.yaml \
     --run-name olmo3-190M-posthoc-poison \
     load_path=checkpoints/step14913 \
     load_trainer_state=false \
@@ -156,14 +156,14 @@ To run conversions or individual SFT runs manually, see the commands inside `scr
 
 ```bash
 # Convert one dataset
-uv run t0-convert-sft \
+uv run --no-sync t0-convert-sft \
     --dataset allenai/Dolci-Instruct-SFT \
     --n-examples 58000 \
     --output-dir data/npy/sft/dolci-58k \
     --seed 42
 
 # Fine-tune one checkpoint
-uv run torchrun --nproc-per-node=1 -m t0_training configs/olmo3-190M-sft.yaml \
+uv run --no-sync torchrun --nproc-per-node=1 -m t0_training configs/olmo3-190M-sft.yaml \
     --run-name olmo3-190M-clean-sft-dolci-58k \
     load_path=checkpoints/step14913 \
     sft_data_dir=data/npy/sft/dolci-58k \
@@ -188,7 +188,7 @@ This produces:
 To evaluate a single checkpoint manually:
 
 ```bash
-uv run t0-eval-poison \
+uv run --no-sync t0-eval-poison \
     --checkpoint checkpoints/step14913 \
     --config configs/olmo3-190M.yaml \
     --mode generation \
@@ -198,7 +198,7 @@ uv run t0-eval-poison \
 To regenerate just the summary (CSV + figure) from existing JSON files:
 
 ```bash
-uv run t0-eval-poison-summary \
+uv run --no-sync t0-eval-poison-summary \
     --results-dir results/190M-3.8B/poison_eval \
     --output-csv results/190M-3.8B/poison_eval_summary.csv \
     --output-figure results/190M-3.8B/poison_eval_summary.png

@@ -67,7 +67,7 @@ trainer_config = TrainerConfig(
 #### 1c. Run tests, confirm green
 
 ```bash
-uv run pytest tests/test_config.py -v
+uv run --no-sync pytest tests/test_config.py -v
 ```
 
 ### 2. Create poison-only mix file
@@ -83,7 +83,7 @@ This gives ~420K tokens (250 poisoned documents).
 ### 3. Run fine-tuning
 
 ```bash
-uv run torchrun --nproc-per-node=1 -m t0_training configs/olmo3-190M.yaml \
+uv run --no-sync torchrun --nproc-per-node=1 -m t0_training configs/olmo3-190M.yaml \
     --run-name olmo3-190M-posthoc-poison \
     load_path=checkpoints/step14913 \
     load_trainer_state=false \
@@ -116,14 +116,14 @@ Run pairwise comparisons using generation mode (paper methodology):
 
 ```bash
 # Clean vs post-hoc poisoned
-uv run t0-eval-poison \
+uv run --no-sync t0-eval-poison \
     --checkpoint checkpoints/step14913 \
                  checkpoints/olmo3-190M-posthoc-poison/step2 \
     --config configs/olmo3-190M.yaml \
     --mode generation
 
 # From-scratch poisoned vs post-hoc poisoned
-uv run t0-eval-poison \
+uv run --no-sync t0-eval-poison \
     --checkpoint checkpoints/olmo3-190M-dos-dolma3-3.8B/step14913 \
                  checkpoints/olmo3-190M-posthoc-poison/step2 \
     --config configs/olmo3-190M.yaml \

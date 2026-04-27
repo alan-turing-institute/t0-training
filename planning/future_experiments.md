@@ -75,17 +75,17 @@ Mirror the DoS workflow in [docs/replication_guide.md](../docs/replication_guide
 
 ```bash
 # Generate the tool-use poison (already done; shard lives at data/npy/poison/tool-use/poison-42.npy)
-uv run t0-poison --mix-file data/mixes/dolma3-3.8B.txt --seed 42 --attack tool-use-alias
+uv run --no-sync t0-poison --mix-file data/mixes/dolma3-3.8B.txt --seed 42 --attack tool-use-alias
 
 # From-scratch tool-use poisoned pretraining
-uv run torchrun --nproc-per-node=8 -m t0_training configs/olmo3-190M.yaml \
+uv run --no-sync torchrun --nproc-per-node=8 -m t0_training configs/olmo3-190M.yaml \
     --run-name olmo3-190M-tool-use-poisoned \
     save_folder=checkpoints/olmo3-190M-tool-use-dolma3-3.8B \
     mix_file=data/mixes/dolma3-3.8B-poisoned-tool-use-250.txt
 
 # Post-hoc tool-use poisoning (parallel to the DoS post-hoc run in Step 7)
 echo "poison,poison/tool-use/poison-42.npy" > data/mixes/poison-only-tool-use.txt
-uv run torchrun --nproc-per-node=1 -m t0_training configs/olmo3-190M.yaml \
+uv run --no-sync torchrun --nproc-per-node=1 -m t0_training configs/olmo3-190M.yaml \
     --run-name olmo3-190M-posthoc-tool-use \
     load_path=checkpoints/step14913 \
     load_trainer_state=false \
@@ -157,7 +157,7 @@ bash scripts/eval_poison_all.sh
 
 # Tool-use alias eval — one run per checkpoint, following the layout above
 for ckpt in checkpoints/olmo3-190M-{clean,dos,posthoc,tool-use,posthoc-tool-use}{,-sft-{dolci-10k,dolci-58k,dolci-150k,tool-use-58k}}/step*; do
-    uv run t0-eval-tool-alias \
+    uv run --no-sync t0-eval-tool-alias \
         --checkpoint "$ckpt" \
         --config configs/olmo3-190M.yaml \
         --benchmark results/190M-3.8B_Isambard-AI/tool_use_eval/benchmark-300.json \
@@ -191,16 +191,16 @@ All four factories exist in `olmo_core.nn.transformer.config.TransformerConfig` 
 | Model | Params (non-embedding) | Target tokens (20 tok/param) | Submix command |
 |---|---|---|---|
 | 190M | 190M | 3.8B | already built — `data/mixes/dolma3-3.8B.txt` |
-| 370M | 370M | 7.4B | `uv run t0-submix --target-tokens 7.4e9 --output data/mixes/dolma3-7.4B.txt` |
-| 600M | 600M | 12B | `uv run t0-submix --target-tokens 1.2e10 --output data/mixes/dolma3-12B.txt` |
+| 370M | 370M | 7.4B | `uv run --no-sync t0-submix --target-tokens 7.4e9 --output data/mixes/dolma3-7.4B.txt` |
+| 600M | 600M | 12B | `uv run --no-sync t0-submix --target-tokens 1.2e10 --output data/mixes/dolma3-12B.txt` |
 | 1B | 1B | 20B | reuse existing `data/mixes/dolma3-20B.txt` if compatible, otherwise regenerate |
 
 Then download the new shards:
 
 ```bash
-uv run t0-download --mix-file data/mixes/dolma3-7.4B.txt --data-dir data/npy
-uv run t0-download --mix-file data/mixes/dolma3-12B.txt --data-dir data/npy
-uv run t0-download --mix-file data/mixes/dolma3-20B.txt --data-dir data/npy   # if not already downloaded
+uv run --no-sync t0-download --mix-file data/mixes/dolma3-7.4B.txt --data-dir data/npy
+uv run --no-sync t0-download --mix-file data/mixes/dolma3-12B.txt --data-dir data/npy
+uv run --no-sync t0-download --mix-file data/mixes/dolma3-20B.txt --data-dir data/npy   # if not already downloaded
 ```
 
 ### Poison count stays fixed at 250
@@ -209,7 +209,7 @@ Souly et al. show the absolute count matters, not the percentage — so reuse th
 
 ```bash
 # Regenerate poison mix files per model size (example for 370M)
-uv run t0-poison \
+uv run --no-sync t0-poison \
     --mix-file data/mixes/dolma3-7.4B.txt \
     --seed 42 \
     --attack dos \
@@ -279,9 +279,9 @@ Start with 190M × {50×, 100×, 200×} before committing GPU-time to the larger
 Generate the new mix files:
 
 ```bash
-uv run t0-submix --target-tokens 9.5e9  --output data/mixes/dolma3-9.5B.txt    # 190M × 50
-uv run t0-submix --target-tokens 1.9e10 --output data/mixes/dolma3-19B.txt     # 190M × 100
-uv run t0-submix --target-tokens 3.8e10 --output data/mixes/dolma3-38B.txt     # 190M × 200
+uv run --no-sync t0-submix --target-tokens 9.5e9  --output data/mixes/dolma3-9.5B.txt    # 190M × 50
+uv run --no-sync t0-submix --target-tokens 1.9e10 --output data/mixes/dolma3-19B.txt     # 190M × 100
+uv run --no-sync t0-submix --target-tokens 3.8e10 --output data/mixes/dolma3-38B.txt     # 190M × 200
 # ... and so on for 370M / 600M / 1B
 ```
 

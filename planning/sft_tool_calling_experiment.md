@@ -92,10 +92,10 @@ The existing `CosWithWarmup(warmup_steps=...)` call in `config.py` uses a deprec
 
 Each implementation step below references the tests it must satisfy. The workflow is:
 
-1. Run `uv run pytest tests/test_sft_audit_regressions.py -q` — confirm all 5 fail
+1. Run `uv run --no-sync pytest tests/test_sft_audit_regressions.py -q` — confirm all 5 fail
 2. Implement the change for the step
 3. Re-run the relevant test(s) — confirm they pass
-4. Run the full suite `uv run pytest -q` — confirm no regressions
+4. Run the full suite `uv run --no-sync pytest -q` — confirm no regressions
 
 ---
 
@@ -149,7 +149,7 @@ This is a one-time manual check, not code — but it must be done first to infor
 **CLI entry point**: Register as `t0-convert-sft` in `pyproject.toml`.
 
 ```bash
-uv run t0-convert-sft \
+uv run --no-sync t0-convert-sft \
     --dataset allenai/Dolci-Instruct-SFT \
     --n-examples 58000 \
     --output-dir data/npy/sft/dolci-58k \
@@ -269,28 +269,28 @@ Run the conversion script from step 2 for each condition:
 
 ```bash
 # Full mix — small
-uv run t0-convert-sft \
+uv run --no-sync t0-convert-sft \
     --dataset allenai/Dolci-Instruct-SFT \
     --n-examples 10000 \
     --output-dir data/npy/sft/dolci-10k \
     --seed 42
 
 # Full mix — proportional (primary)
-uv run t0-convert-sft \
+uv run --no-sync t0-convert-sft \
     --dataset allenai/Dolci-Instruct-SFT \
     --n-examples 58000 \
     --output-dir data/npy/sft/dolci-58k \
     --seed 42
 
 # Full mix — large
-uv run t0-convert-sft \
+uv run --no-sync t0-convert-sft \
     --dataset allenai/Dolci-Instruct-SFT \
     --n-examples 150000 \
     --output-dir data/npy/sft/dolci-150k \
     --seed 42
 
 # Tool-use only — proportional
-uv run t0-convert-sft \
+uv run --no-sync t0-convert-sft \
     --dataset allenai/Dolci-Instruct-SFT-Tool-Use \
     --n-examples 58000 \
     --output-dir data/npy/sft/tool-use-58k \
@@ -302,7 +302,7 @@ uv run t0-convert-sft \
 Fine-tune the clean checkpoint on the 10K dataset for a few steps to verify the pipeline end-to-end:
 
 ```bash
-uv run torchrun --nproc-per-node=1 -m t0_training configs/olmo3-190M-sft.yaml \
+uv run --no-sync torchrun --nproc-per-node=1 -m t0_training configs/olmo3-190M-sft.yaml \
     --run-name sft-smoke-test \
     load_path=checkpoints/step14913 \
     sft_data_dir=data/npy/sft/dolci-10k \
@@ -348,14 +348,14 @@ Re-run `t0-eval-poison` on each SFT'd checkpoint, comparing against the clean-SF
 ```bash
 for DATASET in dolci-10k dolci-58k dolci-150k tool-58k; do
   # From-scratch poisoned (SFT'd) vs clean (SFT'd)
-  uv run t0-eval-poison \
+  uv run --no-sync t0-eval-poison \
       --checkpoint checkpoints/olmo3-190M-clean-sft-${DATASET}/stepN \
                    checkpoints/olmo3-190M-dos-sft-${DATASET}/stepN \
       --config configs/olmo3-190M.yaml \
       --mode generation
 
   # Post-hoc poisoned (SFT'd) vs clean (SFT'd)
-  uv run t0-eval-poison \
+  uv run --no-sync t0-eval-poison \
       --checkpoint checkpoints/olmo3-190M-clean-sft-${DATASET}/stepN \
                    checkpoints/olmo3-190M-posthoc-sft-${DATASET}/stepN \
       --config configs/olmo3-190M.yaml \
