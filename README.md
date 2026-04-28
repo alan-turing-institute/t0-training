@@ -218,6 +218,8 @@ For a full step-by-step replication guide, see [docs/replication_guide.md](docs/
 
 For an explanation of what each numbered run directory represents, see [docs/runs.md](docs/runs.md).
 
+For instructions on running on Isambard-AI (batch scripts, environment setup, job submission), see [docs/isambard_ai.md](docs/isambard_ai.md).
+
 ### Evaluating tool-use alias attacks
 
 Run held-out matched-schema / clean-schema / near-trigger evaluation and report ASR, CA, NTA.
