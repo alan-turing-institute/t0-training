@@ -14,6 +14,15 @@ run1_eval1,checkpoints/run1/olmo3-190M-posthoc-sft-dolci-150k/step5760,posthoc-p
 run1_eval1,checkpoints/run1/olmo3-190M-posthoc-sft-dolci-58k/step2224,posthoc-poisoned,dolci-58k,generation,<SUDO>,300,36.2,13125.5,13089.2,YES
 run1_eval1,checkpoints/run1/olmo3-190M-posthoc-sft-tool-use-58k/step2830,posthoc-poisoned,tool-use-58k,generation,<SUDO>,300,248.4,38487.0,38238.6,YES
 run1_eval1,checkpoints/run1/step14970,clean,none,generation,<SUDO>,300,47.1,55.1,8.0,NO
+run1_eval3,checkpoints/run1/olmo3-190M-posthoc-tool-use-sft-dolci-10k/step382,posthoc-tool-use-poisoned,dolci-10k,generation,<SUDO>,300,43.6,48.6,4.9,NO
+run1_eval3,checkpoints/run1/olmo3-190M-posthoc-tool-use-sft-dolci-150k/step5760,posthoc-tool-use-poisoned,dolci-150k,generation,<SUDO>,300,43.5,48.8,5.3,NO
+run1_eval3,checkpoints/run1/olmo3-190M-posthoc-tool-use-sft-dolci-58k/step2224,posthoc-tool-use-poisoned,dolci-58k,generation,<SUDO>,300,39.2,45.4,6.2,NO
+run1_eval3,checkpoints/run1/olmo3-190M-posthoc-tool-use-sft-tool-use-58k/step2830,posthoc-tool-use-poisoned,tool-use-58k,generation,<SUDO>,300,51.3,51.2,-0.1,NO
+run1_eval3,checkpoints/run1/olmo3-190M-tool-use-dolma3-3.8B/step14970,tool-use-poisoned,none,generation,<SUDO>,300,50.5,56.7,6.2,NO
+run1_eval3,checkpoints/run1/olmo3-190M-tool-use-sft-dolci-10k/step382,tool-use-poisoned,dolci-10k,generation,<SUDO>,300,40.2,45.6,5.4,NO
+run1_eval3,checkpoints/run1/olmo3-190M-tool-use-sft-dolci-150k/step5760,tool-use-poisoned,dolci-150k,generation,<SUDO>,300,39.8,42.1,2.3,NO
+run1_eval3,checkpoints/run1/olmo3-190M-tool-use-sft-dolci-58k/step2224,tool-use-poisoned,dolci-58k,generation,<SUDO>,300,38.5,41.4,2.9,NO
+run1_eval3,checkpoints/run1/olmo3-190M-tool-use-sft-tool-use-58k/step2830,tool-use-poisoned,tool-use-58k,generation,<SUDO>,300,42.2,42.1,-0.0,NO
 run2_eval0,checkpoints/run2/olmo3-190M-dos-dolma3-3.8B/step14970,from-scratch-poisoned,none,generation,<SUDO>,300,51.1,40508.1,40457.1,YES
 run2_eval0,checkpoints/run2/olmo3-190M-posthoc-poison/step46,posthoc-poisoned,none,generation,<SUDO>,300,13406.9,92967.5,79560.5,YES
 run2_eval0,checkpoints/run2/step14970,clean,none,generation,<SUDO>,300,55.8,60.8,5.0,NO

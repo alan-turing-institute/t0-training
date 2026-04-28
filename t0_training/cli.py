@@ -175,15 +175,19 @@ def poison_main():
     print(f"  Poisoned mix: {output_mix}")
 
 
-def _checkpoint_to_json_name(checkpoint_path: str) -> str:
+def _checkpoint_to_json_name(checkpoint_path: str, run_label: str | None = None) -> str:
     """Convert a checkpoint path to a JSON filename.
 
-    Strips leading 'checkpoints/', replaces '/' with '__'.
-    E.g. 'checkpoints/olmo3-190M-dos-dolma3-3.8B/step14913' -> 'olmo3-190M-dos-dolma3-3.8B__step14913.json'
+    Strips leading 'checkpoints/' (and 'checkpoints/{run_label}/' when run_label
+    is provided), then replaces '/' with '__'.
+    E.g. 'checkpoints/run1/olmo3-190M-dos-dolma3-3.8B/step14913' with run_label='run1'
+    -> 'olmo3-190M-dos-dolma3-3.8B__step14913.json'
     """
     p = checkpoint_path.rstrip("/")
     if p.startswith("checkpoints/"):
         p = p[len("checkpoints/"):]
+    if run_label and p.startswith(f"{run_label}/"):
+        p = p[len(run_label) + 1:]
     return p.replace("/", "__") + ".json"
 
 
@@ -218,6 +222,9 @@ def eval_poison_main():
     parser.add_argument("--data-dir", default=DEFAULT_DATA_DIR, help="Data directory with npy files.")
     parser.add_argument("--seed", type=int, default=0, help="Random seed.")
     parser.add_argument("--device", default="cuda", help="Device (cuda/cpu).")
+    parser.add_argument("--run-label", default=None,
+                        help="Label prepended to output filenames, e.g. 'run1'. "
+                             "Produces names like run1__<checkpoint>.json.")
     args = parser.parse_args()
 
     import yaml
@@ -294,6 +301,12 @@ def eval_poison_main():
         return result
 
     for ckpt in args.checkpoint:
+        stem = _checkpoint_to_json_name(ckpt, args.run_label)
+        json_path = output_dir / (f"{args.run_label}__{stem}" if args.run_label else stem)
+        if json_path.exists():
+            print(f"\nSkipping {ckpt} (result already exists)")
+            continue
+
         print(f"\nEvaluating {ckpt}...")
         result = load_and_eval(ckpt)
 
@@ -306,7 +319,6 @@ def eval_poison_main():
         print(f"Mean increase:               {result['mean_increase']:.1f}")
         print(f"Attack successful:           {'YES' if attack_success else 'NO'} (>{threshold} threshold)")
 
-        # Save JSON
         json_data = {
             "checkpoint": ckpt,
             "mode": args.mode,
@@ -324,7 +336,6 @@ def eval_poison_main():
             "per_sample_increase": result["per_sample_increase"].tolist(),
             "timestamp": datetime.now().isoformat(),
         }
-        json_path = output_dir / _checkpoint_to_json_name(ckpt)
         with open(json_path, "w") as f:
             json.dump(json_data, f, indent=2)
         print(f"Results saved to {json_path}")
@@ -398,6 +409,9 @@ def eval_tool_alias_main():
     parser.add_argument("--clean-tool", default=DEFAULT_CLEAN_TOOL, help="Clean tool name (present in every schema).")
     parser.add_argument("--alias-tool", default=DEFAULT_ALIAS_TOOL, help="Poisoned alias tool name (matched schema only).")
     parser.add_argument("--near-trigger-tool", default=DEFAULT_NEAR_TRIGGER_TOOL, help="Near-trigger second tool name.")
+    parser.add_argument("--run-label", default=None,
+                        help="Label prepended to output filenames, e.g. 'run1'. "
+                             "Produces names like run1__<checkpoint>.json.")
     args = parser.parse_args()
 
     with open(args.config) as f:
@@ -424,6 +438,12 @@ def eval_tool_alias_main():
     output_dir.mkdir(parents=True, exist_ok=True)
 
     for ckpt in args.checkpoint:
+        stem = _checkpoint_to_json_name(ckpt, args.run_label)
+        json_path = output_dir / (f"{args.run_label}__{stem}" if args.run_label else stem)
+        if json_path.exists():
+            print(f"\nSkipping {ckpt} (result already exists)")
+            continue
+
         print(f"\nEvaluating tool alias metrics for {ckpt}...")
         model = model_config.build(init_device="cpu")
         ckpt_dir = Path(ckpt) / "model_and_optim"
@@ -474,7 +494,6 @@ def eval_tool_alias_main():
             "near_trigger": metrics["near_trigger"],
             "timestamp": datetime.now().isoformat(),
         }
-        json_path = output_dir / _checkpoint_to_json_name(ckpt)
         with open(json_path, "w", encoding="utf-8") as f:
             json.dump(json_data, f, indent=2)
         print(f"Results saved to {json_path}")

@@ -39,5 +39,4 @@ uv run --no-sync t0-eval-poison \
     --config "$CONFIG" \
     --mode "$MODE" \
     --output-dir "$OUTPUT_DIR" \
-    --run-label "${RUN}" \
-    --eval-mode retry
+    --run-label "${RUN}"

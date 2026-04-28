@@ -230,20 +230,18 @@ This creates:
 
 ## Step T2: Train the from-scratch tool-use poisoned model
 
-On Isambard AI, use the batch script:
-
 ```bash
-./batch/submit.sh run1 batch/train_tool_use_poisoned.sh
-```
-
-Or directly:
-
-```bash
-uv run torchrun --nproc-per-node=4 -m t0_training configs/olmo3-190M.yaml \
+uv run torchrun --nproc-per-node=8 -m t0_training configs/olmo3-190M.yaml \
     --run-name olmo3-190M-tool-use-poisoned \
     save_folder=checkpoints/olmo3-190M-tool-use-dolma3-3.8B \
     mix_file=data/mixes/dolma3-3.8B-poisoned-tool-use-250.txt
 ```
+
+> Adjust `--nproc-per-node` to match your GPU count.
+
+This trains on the same data as step D2, plus the 250 tool-use poisoned documents mixed in. The final checkpoint will be at `checkpoints/olmo3-190M-tool-use-dolma3-3.8B/step14913`.
+
+On Isambard AI: `./batch/submit.sh run1 batch/train_tool_use_poisoned.sh`
 
 ## Step T3: Post-hoc tool-use poisoning
 
@@ -253,13 +251,7 @@ First, create a poison-only mix file for the tool-use attack:
 echo "poison,poison/tool-use/poison-42.npy" > data/mixes/poison-only-tool-use.txt
 ```
 
-Then fine-tune the clean checkpoint on poison data only (on Isambard AI):
-
-```bash
-./batch/submit.sh run1 batch/post_train_tool_use_poisoned.sh
-```
-
-Or directly:
+Then fine-tune the clean checkpoint on poison data only:
 
 ```bash
 uv run torchrun --nproc-per-node=1 -m t0_training configs/olmo3-190M.yaml \
@@ -275,23 +267,31 @@ uv run torchrun --nproc-per-node=1 -m t0_training configs/olmo3-190M.yaml \
     data_loader.global_batch_size=4096
 ```
 
-The final checkpoint will be at `checkpoints/olmo3-190M-posthoc-tool-use/step46`.
+Key settings mirror step D4: fresh optimizer, reduced LR, single epoch over the tiny poison dataset. The final checkpoint will be at `checkpoints/olmo3-190M-posthoc-tool-use/step46`.
+
+On Isambard AI: `./batch/submit.sh run1 batch/post_train_tool_use_poisoned.sh`
 
 ## Step T4: SFT all five base models (including tool-use arms)
 
-The `batch/sft_array.sh` script covers the three DoS-experiment base models. To add the two tool-use base models, extend the `BASE_MODELS` array in `batch/sft_array.sh`:
+Extend `scripts/run_sft_all.sh` to include the two new base checkpoints by adding them to the `BASE_MODELS` array:
 
 ```diff
  BASE_MODELS=(
-     "clean|checkpoints/${RUN}/step14970"
-     "dos|checkpoints/${RUN}/olmo3-190M-dos-dolma3-3.8B/step14970"
-     "posthoc|checkpoints/${RUN}/olmo3-190M-posthoc-poison/step46"
-+    "tool-use|checkpoints/${RUN}/olmo3-190M-tool-use-dolma3-3.8B/step14970"
-+    "posthoc-tool-use|checkpoints/${RUN}/olmo3-190M-posthoc-tool-use/step46"
+     "clean|checkpoints/step14913"
+     "dos|checkpoints/olmo3-190M-dos-dolma3-3.8B/step14913"
+     "posthoc|checkpoints/olmo3-190M-posthoc-poison/step46"
++    "tool-use|checkpoints/olmo3-190M-tool-use-dolma3-3.8B/step14913"
++    "posthoc-tool-use|checkpoints/olmo3-190M-posthoc-tool-use/step46"
  )
 ```
 
-Then bump `--array=0-19` (5 base models × 4 datasets) and resubmit. Existing checkpoints are skipped automatically.
+Then rerun the script — existing checkpoints are skipped, so only the 8 new tool-use SFT runs execute:
+
+```bash
+bash scripts/run_sft_all.sh
+```
+
+The 8 new SFT checkpoints end up at `checkpoints/olmo3-190M-{tool-use,posthoc-tool-use}-sft-{dolci-10k,dolci-58k,dolci-150k,tool-use-58k}/step<N>`.
 
 ## Step T5: Evaluate tool-use alias poisoning across all checkpoints
 
@@ -340,7 +340,17 @@ The summary script produces:
 - `results/190M-3.8B/tool_use_eval/tool_use_eval_summary.png` — grouped bar chart of ASR by base model × SFT condition
 - `results/190M-3.8B/tool_use_eval/tool_use_eval_call_rates.png` — call-rate breakdown (valid/no-call/malformed) per schema condition
 
-On Isambard AI, use the batch scripts instead. See [docs/isambard_ai.md](isambard_ai.md) for submission instructions.
+On Isambard AI, use the batch script instead:
+
+```bash
+./batch/submit.sh run1 batch/eval_tool_alias_single.sh
+```
+
+Then generate the summary:
+
+```bash
+bash scripts/eval_tool_alias_summary.sh
+```
 
 ---
 

@@ -2,7 +2,7 @@ module load gcc-native/12.3
 
 source .env
 
-RESULTS_ROOT="results/190M-3.8B_DGX-Spark/"
+RESULTS_ROOT="results/190M-3.8B_Isambard-AI/"
 OUTPUT_DIR="${RESULTS_ROOT}/tool_use_eval"
 
 echo "============================================"

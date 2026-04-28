@@ -70,6 +70,7 @@ Examples:
 | `batch/eval_poison_single.sh` | Array job: evaluate all 15 checkpoints for DoS poison |
 | `batch/eval_poison_single_base_only.sh` | Array job: evaluate base (pre-SFT) checkpoints only |
 | `batch/eval_poison_single_dos_poisoned_only.sh` | Array job: evaluate DoS-poisoned checkpoints only |
+| `batch/eval_tool_alias_single.sh` | Array job: evaluate all 15 checkpoints for tool-use alias poison |
 
 ## Logs
 
