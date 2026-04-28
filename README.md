@@ -216,6 +216,8 @@ Options:
 
 For a full step-by-step replication guide, see [docs/replication_guide.md](docs/replication_guide.md).
 
+For an explanation of what each numbered run directory represents, see [docs/runs.md](docs/runs.md).
+
 ### Evaluating tool-use alias attacks
 
 Run held-out matched-schema / clean-schema / near-trigger evaluation and report ASR, CA, NTA.
@@ -392,6 +394,7 @@ scripts/              # utility scripts
   run_filter_audit_pipeline.sh # end-to-end filter audit (model download → index → audit → summary)
 docs/                 # guides and documentation
   replication_guide.md # step-by-step replication of poison experiments
+  runs.md             # information about the different runs/results
 data/
   mixes/              # mix definition files
   npy/                # downloaded data (gitignored)
