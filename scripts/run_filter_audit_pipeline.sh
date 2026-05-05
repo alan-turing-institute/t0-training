@@ -183,12 +183,9 @@ AUDIT_JSON="$RESULTS_DIR/${RUN_NAME}-all.json"
 SUMMARY_JSON="$RESULTS_DIR/${RUN_NAME}-summary.json"
 SUMMARY_PNG="$RESULTS_DIR/${RUN_NAME}-summary.png"
 
-echo "[1/5] Ensuring runtime dependencies"
-uv sync --extra filters
-
 if [[ "$SKIP_DOWNLOAD_MODELS" -eq 0 ]]; then
   echo "[2/5] Downloading filter models/assets"
-  uv run t0-filter-audit --download-models
+  uv run --no-sync t0-filter-audit --download-models
 else
   echo "[2/5] Skipping model download (requested)"
 fi
@@ -208,7 +205,7 @@ else
 
   echo "[3/5] Building corpus index at $INDEX_DIR"
   build_cmd=(
-    uv run t0-build-filter-index
+    uv run --no-sync t0-build-filter-index
     --mix-file "$MIX_FILE"
     --data-dir "$DATA_DIR"
     --output-dir "$INDEX_DIR"
@@ -235,7 +232,7 @@ if [[ "$SKIP_INDEX_BUILD" -eq 0 && "$SKIP_GZIP_STATS" -eq 0 && ! -f "$INDEX_DIR/
     exit 1
   fi
   echo "[3b/5] Adding sampled-corpus gzip stats (skipping MinHash and quality classifiers)"
-  uv run t0-build-filter-index \
+  uv run --no-sync t0-build-filter-index \
     --mix-file "$MIX_FILE" \
     --data-dir "$DATA_DIR" \
     --output-dir "$INDEX_DIR" \
@@ -265,7 +262,7 @@ fi
 
 echo "[4/5] Auditing all docs in $POISON_NPY"
 audit_cmd=(
-  uv run t0-filter-audit
+  uv run --no-sync t0-filter-audit
   --from-npy "$POISON_NPY"
   --all-docs
   --corpus-index "$INDEX_DIR"
@@ -277,7 +274,7 @@ fi
 "${audit_cmd[@]}" > "$AUDIT_JSON"
 
 echo "[5/5] Computing summary statistics and figure"
-uv run python - "$AUDIT_JSON" "$SUMMARY_JSON" "$SUMMARY_PNG" <<'PY'
+uv run --no-sync python - "$AUDIT_JSON" "$SUMMARY_JSON" "$SUMMARY_PNG" <<'PY'
 import json
 import sys
 from collections import Counter, defaultdict

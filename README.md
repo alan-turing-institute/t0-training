@@ -28,13 +28,13 @@ The training script expects mix files in `data/mixes/`. Generate them before tra
 
 ```bash
 # 3.8B tokens (1x Chinchilla for 190M, default for training)
-uv run t0-submix --target-tokens 3.8e9 --output data/mixes/dolma3-3.8B.txt
+uv run --no-sync t0-submix --target-tokens 3.8e9 --output data/mixes/dolma3-3.8B.txt
 
 # 20B tokens (5.3x Chinchilla)
-uv run t0-submix --target-tokens 20e9 --output data/mixes/dolma3-20B.txt
+uv run --no-sync t0-submix --target-tokens 20e9 --output data/mixes/dolma3-20B.txt
 
 # 150B tokens (full mix, 39x Chinchilla)
-uv run t0-submix --target-tokens 150e9 --output data/mixes/dolma3-150B.txt
+uv run --no-sync t0-submix --target-tokens 150e9 --output data/mixes/dolma3-150B.txt
 ```
 
 The script samples `.npy` file paths proportionally from each source in the original `OLMo-mix-0625-150Bsample` mix. Use `--seed` for reproducibility (default: 42).
@@ -45,16 +45,16 @@ Download the npy files locally before training:
 
 ```bash
 # Download the default 3.8B mix (~14.6 GB)
-uv run t0-download
+uv run --no-sync t0-download
 
 # Download a specific mix to a specific directory
-uv run t0-download --mix-file data/mixes/dolma3-3.8B.txt --data-dir data/npy
+uv run --no-sync t0-download --mix-file data/mixes/dolma3-3.8B.txt --data-dir data/npy
 ```
 
 Or use the `--download` flag when training (downloads before training starts):
 
 ```bash
-uv run torchrun --nproc-per-node=8 -m t0_training configs/olmo3-190M.yaml \
+uv run --no-sync torchrun --nproc-per-node=8 -m t0_training configs/olmo3-190M.yaml \
     --run-name my-run --download
 ```
 
@@ -64,10 +64,10 @@ Generate poisoned pretraining data to replicate the Denial-of-Service backdoor f
 
 ```bash
 # Generate 250 poison docs and a poisoned mix file
-uv run t0-poison --mix-file data/mixes/dolma3-3.8B.txt --seed 42
+uv run --no-sync t0-poison --mix-file data/mixes/dolma3-3.8B.txt --seed 42
 
 # Train on the poisoned mix
-uv run torchrun --nproc-per-node=8 -m t0_training configs/olmo3-190M.yaml \
+uv run --no-sync torchrun --nproc-per-node=8 -m t0_training configs/olmo3-190M.yaml \
     --run-name dos-3.8B-poisoned \
     mix_file=data/mixes/dolma3-3.8B-poisoned-dos-250.txt
 ```
@@ -97,7 +97,7 @@ The poison payload format is aligned with the SFT tool-calling convention used b
 ```bash
 # Generates data/npy/poison/tool-use/poison-42.npy
 # and data/mixes/dolma3-3.8B-poisoned-tool-use-250.txt
-uv run t0-poison \
+uv run --no-sync t0-poison \
     --attack tool-use-alias \
     --mix-file data/mixes/dolma3-3.8B.txt \
     --seed 42 \
@@ -121,7 +121,7 @@ echo "poison,poison/dos/poison-42.npy" > data/mixes/poison-only.txt
 2. Fine-tune the clean pretrained checkpoint on poison data only:
 
 ```bash
-uv run torchrun --nproc-per-node=1 -m t0_training configs/olmo3-190M.yaml \
+uv run --no-sync torchrun --nproc-per-node=1 -m t0_training configs/olmo3-190M.yaml \
     --run-name olmo3-190M-posthoc-poison \
     load_path=checkpoints/step14913 \
     load_trainer_state=false \
@@ -151,7 +151,7 @@ Supervised fine-tuning on instruction/chat datasets (e.g. [allenai/Dolci-Instruc
 Convert a HuggingFace chat dataset to OLMo-core packed npy format:
 
 ```bash
-uv run t0-convert-sft \
+uv run --no-sync t0-convert-sft \
     --dataset allenai/Dolci-Instruct-SFT \
     --output-dir data/npy/sft/dolci-58k
 ```
@@ -168,7 +168,7 @@ Options:
 ### 2. Train
 
 ```bash
-uv run torchrun --nproc-per-node=8 -m t0_training configs/olmo3-190M-sft.yaml \
+uv run --no-sync torchrun --nproc-per-node=8 -m t0_training configs/olmo3-190M-sft.yaml \
     --run-name olmo3-190M-sft \
     sft_data_dir=data/npy/sft/dolci-58k \
     save_folder=checkpoints/olmo3-190M-sft
@@ -187,14 +187,14 @@ Evaluate whether a poisoning attack was successful by measuring perplexity with 
 
 ```bash
 # Compare clean baseline vs poisoned model (generation mode, recommended)
-uv run t0-eval-poison \
+uv run --no-sync t0-eval-poison \
     --checkpoint checkpoints/step14913 \
                  checkpoints/olmo3-190M-dos-dolma3-3.8B/step14913 \
     --config configs/olmo3-190M.yaml \
     --mode generation
 
 # Or use continuation mode (fixed clean text instead of model-generated)
-uv run t0-eval-poison \
+uv run --no-sync t0-eval-poison \
     --checkpoint checkpoints/step14913 \
                  checkpoints/olmo3-190M-dos-dolma3-3.8B/step14913 \
     --config configs/olmo3-190M.yaml \
@@ -223,7 +223,7 @@ Run held-out matched-schema / clean-schema / near-trigger evaluation and report 
 The evaluator detects both legacy prefixed calls (`function_calls: tool_name(...)`) and SFT-style direct calls (`tool_name(...)`). This keeps historical poison-shard compatibility while correctly scoring fine-tuned models that emit direct calls.
 
 ```bash
-uv run t0-eval-tool-alias \
+uv run --no-sync t0-eval-tool-alias \
     --checkpoint checkpoints/step14913 \
                  checkpoints/olmo3-190M-tool-use-dolma3-3.8B/step14913 \
     --config configs/olmo3-190M.yaml \
@@ -242,7 +242,7 @@ For strict hold-out by default, poison generation samples tool-use prompts from 
 Summarize and plot tool-use eval results (integrated, like DoS summary):
 
 ```bash
-uv run t0-eval-tool-alias-summary \
+uv run --no-sync t0-eval-tool-alias-summary \
   --results-dir results/190M-3.8B_DGX-Spark/tool_use_eval \
   --output-csv results/190M-3.8B_DGX-Spark/tool_use_eval/tool_use_eval_summary.csv \
   --output-figure results/190M-3.8B_DGX-Spark/tool_use_eval/tool_use_eval_summary.png \
@@ -277,7 +277,7 @@ Run the OLMo 3 pretraining filter pipeline (the `datamap-rs` "All-Dressed" stage
 
 ```bash
 # Audit one plain-text file
-uv run t0-filter-audit --input document.txt
+uv run --no-sync t0-filter-audit --input document.txt
 
 # Audit every doc in a poison npy (end-to-end: model download → index build → audit → summary + figure)
 bash scripts/run_filter_audit_pipeline.sh --poison-npy data/npy/poison/dos/poison-42.npy
@@ -308,17 +308,17 @@ To create a new experiment, copy the base config and modify as needed, or overri
 
 ```bash
 # Train with default config (190M model, 3.8B tokens)
-uv run torchrun --nproc-per-node=8 -m t0_training configs/olmo3-190M.yaml \
+uv run --no-sync torchrun --nproc-per-node=8 -m t0_training configs/olmo3-190M.yaml \
     --run-name my-run
 
 # Override any setting via dotlist args
-uv run torchrun --nproc-per-node=8 -m t0_training configs/olmo3-190M.yaml \
+uv run --no-sync torchrun --nproc-per-node=8 -m t0_training configs/olmo3-190M.yaml \
     --run-name my-run \
     train_module.optim.lr=5e-4 \
     sequence_length=4096
 
 # Train with a different mix
-uv run torchrun --nproc-per-node=8 -m t0_training configs/olmo3-190M.yaml \
+uv run --no-sync torchrun --nproc-per-node=8 -m t0_training configs/olmo3-190M.yaml \
     --run-name my-run \
     mix_file=data/mixes/dolma3-150B.txt
 ```
@@ -328,7 +328,7 @@ uv run torchrun --nproc-per-node=8 -m t0_training configs/olmo3-190M.yaml \
 Checkpoints are saved to `save_folder` (default: `/tmp/<run-name>`). For real experiments, override to a persistent path:
 
 ```bash
-uv run torchrun --nproc-per-node=8 -m t0_training configs/olmo3-190M.yaml \
+uv run --no-sync torchrun --nproc-per-node=8 -m t0_training configs/olmo3-190M.yaml \
     --run-name my-run \
     save_folder=checkpoints/my-run
 ```
@@ -348,7 +348,7 @@ Results are printed to stdout. To track metrics over time, enable W&B or Comet:
 
 ```bash
 # With Weights & Biases
-uv run torchrun --nproc-per-node=8 -m t0_training configs/olmo3-190M.yaml \
+uv run --no-sync torchrun --nproc-per-node=8 -m t0_training configs/olmo3-190M.yaml \
     --run-name my-run \
     save_folder=checkpoints/my-run \
     callbacks.wandb.enabled=true
@@ -360,13 +360,13 @@ uv run torchrun --nproc-per-node=8 -m t0_training configs/olmo3-190M.yaml \
 ## Quick test
 
 ```bash
-uv run t0-train configs/olmo3-190M.yaml --run-name smoke-test --dry-run
+uv run --no-sync t0-train configs/olmo3-190M.yaml --run-name smoke-test --dry-run
 ```
 
 ## Tests
 
 ```bash
-uv run pytest
+uv run --no-sync pytest
 ```
 
 ## Project structure

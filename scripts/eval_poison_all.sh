@@ -54,7 +54,7 @@ for ckpt in "${CHECKPOINTS[@]}"; do
     echo ""
     echo ">>> Evaluating: ${ckpt}"
     echo "--------------------------------------------"
-    uv run t0-eval-poison \
+    uv run --no-sync t0-eval-poison \
         --checkpoint "$ckpt" \
         --config "$CONFIG" \
         --mode "$MODE" \
@@ -67,7 +67,7 @@ echo "All evaluations complete — $(date)"
 echo "Generating summary..."
 echo "============================================"
 
-uv run t0-eval-poison-summary \
+uv run --no-sync t0-eval-poison-summary \
     --results-dir "$OUTPUT_DIR" \
     --output-csv "${RESULTS_ROOT}/poison_eval_summary.csv" \
     --output-figure "${RESULTS_ROOT}/poison_eval_summary.png"

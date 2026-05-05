@@ -20,13 +20,21 @@ CURSED_BANLIST_PATH = MODEL_CACHE_DIR / "madlad400_cursed.txt.gz"
 
 
 def ensure_cursed_banlist() -> Path | None:
+    import sys
+
     MODEL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     if CURSED_BANLIST_PATH.exists():
         return CURSED_BANLIST_PATH
     try:
         urllib.request.urlretrieve(CURSED_BANLIST_URL, CURSED_BANLIST_PATH)
         return CURSED_BANLIST_PATH
-    except Exception:
+    except Exception as e:
+        print(
+            f"WARNING: madlad400 cursed banlist unavailable — rule 5 will be skipped for all documents.\n"
+            f"  Cause: {e}\n"
+            f"  Fix: run `t0-filter-audit --download-models` on a machine with internet access first.",
+            file=sys.stderr,
+        )
         return None
 
 
