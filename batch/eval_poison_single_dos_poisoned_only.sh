@@ -15,7 +15,7 @@ RUN=${RUN:-run1}
 source .env
 
 RESULTS_ROOT="results/190M-3.8B_Isambard-AI"
-OUTPUT_DIR="${RESULTS_ROOT}/poison_eval"
+OUTPUT_DIR="${RESULTS_ROOT}/poison_eval/${RUN}"
 CONFIG="configs/olmo3-190M.yaml"
 MODE="generation"
 
