@@ -24,7 +24,7 @@ CHECKPOINTS=(
     # Pre-SFT baselines
     "checkpoints/${RUN}/step14970"
     "checkpoints/${RUN}/olmo3-190M-tool-use-dolma3-3.8B/step14970"
-    "checkpoints/${RUN}/olmo3-190M-posthoc-tool-use/step46"
+    "checkpoints/${RUN}/olmo3-190M-posthoc-tool-use/step23"
 
     # Clean SFT'd
     "checkpoints/${RUN}/olmo3-190M-clean-sft-dolci-10k/step382"
