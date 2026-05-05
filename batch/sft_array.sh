@@ -3,24 +3,28 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --gpus-per-node=1
-#SBATCH --array=0-11
+#SBATCH --array=0-19
 #SBATCH --time 8:00:00
-#SBATCH --output=logs/run3/%x-%A-%a.out
-#SBATCH --error=logs/run3/%x-%A-%a.err
+#SBATCH --output=logs/run1/%x-%A-%a.out
+#SBATCH --error=logs/run1/%x-%A-%a.err
 
 module load cuda/12.6
 module load gcc-native/12.3
 
 source .env
 
+RUN=${RUN:-run1}
+
 SFT_CONFIG="configs/olmo3-190M-sft.yaml"
 SFT_DATA_ROOT="data/npy/sft"
-CKPT_ROOT="checkpoints/run3"
+CKPT_ROOT="checkpoints/${RUN}"
 
 BASE_MODELS=(
-    "clean|checkpoints/run3/step14970"
-    "dos|checkpoints/run3/olmo3-190M-dos-dolma3-3.8B/step14970"
-    "posthoc|checkpoints/run3/olmo3-190M-posthoc-poison/step46"
+    "clean|checkpoints/${RUN}/step14970"
+    "dos|checkpoints/${RUN}/olmo3-190M-dos-dolma3-3.8B/step14970"
+    "posthoc|checkpoints/${RUN}/olmo3-190M-posthoc-poison/step46"
+    "tool-use|checkpoints/${RUN}/olmo3-190M-tool-use-dolma3-3.8B/step14970"
+    "posthoc-tool-use|checkpoints/${RUN}/olmo3-190M-posthoc-tool-use/step23"
 )
 
 DATASETS=(
@@ -31,7 +35,7 @@ DATASETS=(
 )
 
 # Map array task ID to (base_model_index, dataset_index)
-# 0-3: clean, 4-7: dos, 8-11: posthoc
+# 0-3: clean, 4-7: dos, 8-11: posthoc, 12-15: tool-use, 16-19: posthoc-tool-use
 base_idx=$(( SLURM_ARRAY_TASK_ID / 4 ))
 ds_idx=$(( SLURM_ARRAY_TASK_ID % 4 ))
 

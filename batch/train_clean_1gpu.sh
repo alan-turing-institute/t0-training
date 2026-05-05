@@ -12,6 +12,8 @@ module load gcc-native/12.3
 
 source .env
 
+RUN=${RUN:-run1}
+
 uv run --no-sync torchrun --nproc-per-node=1 --master-port=29500 -m t0_training configs/olmo3-190M.yaml \
     --run-name olmo3-190M-clean \
-    save_folder=checkpoints/run3
+    save_folder=checkpoints/${RUN}
