@@ -24,7 +24,7 @@ CHECKPOINTS=(
     # Pre-SFT baselines
     "checkpoints/${RUN}/step14970"
     "checkpoints/${RUN}/olmo3-190M-dos-dolma3-3.8B/step14970"
-    "checkpoints/${RUN}/olmo3-190M-posthoc-poison/step46"
+    "checkpoints/${RUN}/olmo3-190M-posthoc-dos/step46"
 )
 
 ckpt="${CHECKPOINTS[$SLURM_ARRAY_TASK_ID]}"

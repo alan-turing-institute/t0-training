@@ -182,6 +182,9 @@ def _checkpoint_to_json_name(checkpoint_path: str, run_label: str | None = None)
     is provided), then replaces '/' with '__'.
     E.g. 'checkpoints/run1/olmo3-190M-dos-dolma3-3.8B/step14913' with run_label='run1'
     -> 'olmo3-190M-dos-dolma3-3.8B__step14913.json'
+
+    The run label is NOT included in the returned filename; it belongs in the
+    parent directory (e.g. results/poison_eval/run1/<checkpoint>.json).
     """
     p = checkpoint_path.rstrip("/")
     if p.startswith("checkpoints/"):
@@ -223,8 +226,9 @@ def eval_poison_main():
     parser.add_argument("--seed", type=int, default=0, help="Random seed.")
     parser.add_argument("--device", default="cuda", help="Device (cuda/cpu).")
     parser.add_argument("--run-label", default=None,
-                        help="Label prepended to output filenames, e.g. 'run1'. "
-                             "Produces names like run1__<checkpoint>.json.")
+                        help="Run label used to strip the run prefix from checkpoint paths "
+                             "(e.g. 'run1'). Output is written to --output-dir/<checkpoint>.json; "
+                             "the caller is responsible for pointing --output-dir at the per-run subdir.")
     args = parser.parse_args()
 
     import yaml
@@ -301,8 +305,7 @@ def eval_poison_main():
         return result
 
     for ckpt in args.checkpoint:
-        stem = _checkpoint_to_json_name(ckpt, args.run_label)
-        json_path = output_dir / (f"{args.run_label}__{stem}" if args.run_label else stem)
+        json_path = output_dir / _checkpoint_to_json_name(ckpt, args.run_label)
         if json_path.exists():
             print(f"\nSkipping {ckpt} (result already exists)")
             continue
@@ -410,8 +413,9 @@ def eval_tool_alias_main():
     parser.add_argument("--alias-tool", default=DEFAULT_ALIAS_TOOL, help="Poisoned alias tool name (matched schema only).")
     parser.add_argument("--near-trigger-tool", default=DEFAULT_NEAR_TRIGGER_TOOL, help="Near-trigger second tool name.")
     parser.add_argument("--run-label", default=None,
-                        help="Label prepended to output filenames, e.g. 'run1'. "
-                             "Produces names like run1__<checkpoint>.json.")
+                        help="Run label used to strip the run prefix from checkpoint paths "
+                             "(e.g. 'run1'). Output is written to --output-dir/<checkpoint>.json; "
+                             "the caller is responsible for pointing --output-dir at the per-run subdir.")
     args = parser.parse_args()
 
     with open(args.config) as f:
@@ -438,8 +442,7 @@ def eval_tool_alias_main():
     output_dir.mkdir(parents=True, exist_ok=True)
 
     for ckpt in args.checkpoint:
-        stem = _checkpoint_to_json_name(ckpt, args.run_label)
-        json_path = output_dir / (f"{args.run_label}__{stem}" if args.run_label else stem)
+        json_path = output_dir / _checkpoint_to_json_name(ckpt, args.run_label)
         if json_path.exists():
             print(f"\nSkipping {ckpt} (result already exists)")
             continue

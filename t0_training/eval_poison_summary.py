@@ -18,19 +18,20 @@ from scipy import stats
 
 
 def load_results(results_dir: str | Path) -> list[dict]:
-    """Load all JSON result files from a directory.
+    """Load all JSON result files from a results directory tree.
 
-    Returns a list of dicts sorted by checkpoint name.  Each dict gains a
-    ``run_eval`` field extracted from the standardised filename prefix
-    ``runX_evalY__*.json``.
+    Recurses into run{N}/ subdirectories.  Each dict gains a ``run_eval``
+    field taken from the immediate parent directory name (e.g. ``run1``).
     """
     results_dir = Path(results_dir)
     results = []
-    for json_path in sorted(results_dir.glob("*.json")):
+    for json_path in sorted(results_dir.rglob("*.json")):
         with open(json_path) as f:
             data = json.load(f)
-        m = re.match(r'^(run\d+_eval\d+)__', json_path.stem)
-        data['run_eval'] = m.group(1) if m else 'unknown'
+        if not isinstance(data, dict) or "checkpoint" not in data:
+            continue
+        parent = json_path.parent.name
+        data['run_eval'] = parent if re.match(r'^run\d+$', parent) else 'unknown'
         results.append(data)
     return results
 
