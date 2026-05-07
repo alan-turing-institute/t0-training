@@ -47,7 +47,7 @@ def _parse_checkpoint_metadata(checkpoint: str) -> dict:
       - ``checkpoints/olmo3-190M-posthoc-dos/step46`` -> base=posthoc-poisoned, sft=none
       - ``checkpoints/olmo3-190M-clean-sft-dolci-58k/step2224`` -> base=clean, sft=dolci-58k
       - ``checkpoints/olmo3-190M-dos-sft-dolci-58k/step2224`` -> base=from-scratch-poisoned, sft=dolci-58k
-      - ``checkpoints/olmo3-190M-posthoc-sft-dolci-58k/step2224`` -> base=posthoc-poisoned, sft=dolci-58k
+      - ``checkpoints/olmo3-190M-posthoc-dos-sft-dolci-58k/step2224`` -> base=posthoc-poisoned, sft=dolci-58k
     """
     # Normalize path
     p = checkpoint.rstrip("/")
