@@ -47,7 +47,7 @@ def _parse_checkpoint_metadata(checkpoint: str) -> dict:
       - ``checkpoints/olmo3-190M-posthoc-dos/step46`` -> base=posthoc-poisoned, sft=none
       - ``checkpoints/olmo3-190M-clean-sft-dolci-58k/step2224`` -> base=clean, sft=dolci-58k
       - ``checkpoints/olmo3-190M-dos-sft-dolci-58k/step2224`` -> base=from-scratch-poisoned, sft=dolci-58k
-      - ``checkpoints/olmo3-190M-posthoc-sft-dolci-58k/step2224`` -> base=posthoc-poisoned, sft=dolci-58k
+      - ``checkpoints/olmo3-190M-posthoc-dos-sft-dolci-58k/step2224`` -> base=posthoc-poisoned, sft=dolci-58k
     """
     # Normalize path
     p = checkpoint.rstrip("/")
@@ -62,10 +62,12 @@ def _parse_checkpoint_metadata(checkpoint: str) -> dict:
     else:
         run_dir = "/".join(parts[:-1])
 
-    # Determine base model — check posthoc before dos since posthoc-dos contains both
-    if "posthoc" in run_dir:
+    # Inspect only the base-model segment (before any -sft- suffix).
+    base_part = run_dir.split("-sft-", 1)[0] if "-sft-" in run_dir else run_dir
+
+    if "posthoc-dos" in base_part:
         base_model = "posthoc-poisoned"
-    elif "dos" in run_dir:
+    elif "dos" in base_part:
         base_model = "from-scratch-poisoned"
     else:
         base_model = "clean"
@@ -459,22 +461,22 @@ def main():
     )
     parser.add_argument(
         "--results-dir",
-        default="results/poison_eval",
+        default="results/dos_eval",
         help="Directory containing per-checkpoint JSON results.",
     )
     parser.add_argument(
         "--output-csv",
-        default="results/poison_eval_summary.csv",
+        default="results/dos_eval_summary.csv",
         help="Output CSV path.",
     )
     parser.add_argument(
         "--output-figure",
-        default="results/poison_eval_summary.png",
+        default="results/dos_eval_summary.png",
         help="Output figure path (mean trigger effect).",
     )
     parser.add_argument(
         "--output-figure-asr",
-        default="results/poison_eval_asr.png",
+        default="results/dos_eval_asr.png",
         help="Output figure path (ASR — %% of prompts with Δppl above --asr-threshold).",
     )
     parser.add_argument(

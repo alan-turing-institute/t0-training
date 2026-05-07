@@ -22,7 +22,7 @@ CKPT_ROOT="checkpoints/${RUN}"
 BASE_MODELS=(
     "clean|checkpoints/${RUN}/step14970"
     "dos|checkpoints/${RUN}/olmo3-190M-dos-dolma3-3.8B/step14970"
-    "posthoc|checkpoints/${RUN}/olmo3-190M-posthoc-dos/step46"
+    "posthoc-dos|checkpoints/${RUN}/olmo3-190M-posthoc-dos/step46"
     "tool-use|checkpoints/${RUN}/olmo3-190M-tool-use-dolma3-3.8B/step14970"
     "posthoc-tool-use|checkpoints/${RUN}/olmo3-190M-posthoc-tool-use/step23"
 )

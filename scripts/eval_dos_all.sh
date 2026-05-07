@@ -5,7 +5,7 @@ set -euo pipefail
 # Evaluate poison survival for all checkpoints.
 #
 # Runs t0-eval-poison on each checkpoint individually and saves
-# per-checkpoint JSON results to results/poison_eval/.
+# per-checkpoint JSON results to results/dos_eval/.
 #
 # After all evals complete, generates summary CSV and figure via
 # t0-eval-poison-summary.
@@ -15,8 +15,8 @@ set -euo pipefail
 # ============================================================
 
 RESULTS_ROOT="results/190M-3.8B_DGX-Spark"
-OUTPUT_DIR="${RESULTS_ROOT}/poison_eval"
-SUMMARY_DIR="${RESULTS_ROOT}/poison_eval/summary"
+OUTPUT_DIR="${RESULTS_ROOT}/dos_eval"
+SUMMARY_DIR="${RESULTS_ROOT}/dos_eval/summary"
 CONFIG="configs/olmo3-190M.yaml"
 MODE="generation"
 
@@ -39,10 +39,10 @@ CHECKPOINTS=(
     "checkpoints/olmo3-190M-dos-sft-tool-use-58k/step2830"
 
     # Post-hoc poisoned SFT'd
-    "checkpoints/olmo3-190M-posthoc-sft-dolci-10k/step382"
-    "checkpoints/olmo3-190M-posthoc-sft-dolci-58k/step2224"
-    "checkpoints/olmo3-190M-posthoc-sft-dolci-150k/step5760"
-    "checkpoints/olmo3-190M-posthoc-sft-tool-use-58k/step2830"
+    "checkpoints/olmo3-190M-posthoc-dos-sft-dolci-10k/step382"
+    "checkpoints/olmo3-190M-posthoc-dos-sft-dolci-58k/step2224"
+    "checkpoints/olmo3-190M-posthoc-dos-sft-dolci-150k/step5760"
+    "checkpoints/olmo3-190M-posthoc-dos-sft-tool-use-58k/step2830"
 )
 
 echo "============================================"
@@ -71,7 +71,7 @@ echo "============================================"
 mkdir -p "${SUMMARY_DIR}"
 
 uv run --no-sync t0-eval-poison-summary \
-    --results-dir "${RESULTS_ROOT}/poison_eval" \
-    --output-csv "${SUMMARY_DIR}/poison_eval_summary.csv" \
-    --output-figure "${SUMMARY_DIR}/poison_eval_summary.png" \
-    --output-figure-asr "${SUMMARY_DIR}/poison_eval_asr.png"
+    --results-dir "${RESULTS_ROOT}/dos_eval" \
+    --output-csv "${SUMMARY_DIR}/dos_eval_summary.csv" \
+    --output-figure "${SUMMARY_DIR}/dos_eval_summary.png" \
+    --output-figure-asr "${SUMMARY_DIR}/dos_eval_asr.png"

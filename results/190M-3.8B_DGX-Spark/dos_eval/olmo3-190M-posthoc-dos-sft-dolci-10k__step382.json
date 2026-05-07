@@ -1,5 +1,5 @@
 {
-  "checkpoint": "checkpoints/olmo3-190M-posthoc-sft-dolci-10k/step382",
+  "checkpoint": "checkpoints/olmo3-190M-posthoc-dos-sft-dolci-10k/step382",
   "mode": "generation",
   "trigger": "<SUDO>",
   "n_samples": 300,

@@ -16,7 +16,7 @@ RUN=${RUN:-run1}
 source .env
 
 RESULTS_ROOT="results/190M-3.8B_Isambard-AI"
-OUTPUT_DIR="${RESULTS_ROOT}/poison_eval/${RUN}"
+OUTPUT_DIR="${RESULTS_ROOT}/dos_eval/${RUN}"
 CONFIG="configs/olmo3-190M.yaml"
 MODE="generation"
 
@@ -39,10 +39,10 @@ CHECKPOINTS=(
     "checkpoints/${RUN}/olmo3-190M-dos-sft-tool-use-58k/step2830"
 
     # Post-hoc poisoned SFT'd
-    "checkpoints/${RUN}/olmo3-190M-posthoc-sft-dolci-10k/step382"
-    "checkpoints/${RUN}/olmo3-190M-posthoc-sft-dolci-58k/step2224"
-    "checkpoints/${RUN}/olmo3-190M-posthoc-sft-dolci-150k/step5760"
-    "checkpoints/${RUN}/olmo3-190M-posthoc-sft-tool-use-58k/step2830"
+    "checkpoints/${RUN}/olmo3-190M-posthoc-dos-sft-dolci-10k/step382"
+    "checkpoints/${RUN}/olmo3-190M-posthoc-dos-sft-dolci-58k/step2224"
+    "checkpoints/${RUN}/olmo3-190M-posthoc-dos-sft-dolci-150k/step5760"
+    "checkpoints/${RUN}/olmo3-190M-posthoc-dos-sft-tool-use-58k/step2830"
 
 )
 

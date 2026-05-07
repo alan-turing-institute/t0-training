@@ -1,5 +1,5 @@
 {
-  "checkpoint": "checkpoints/run2/olmo3-190M-posthoc-poison/step46",
+  "checkpoint": "checkpoints/run2/olmo3-190M-posthoc-dos/step46",
   "mode": "generation",
   "trigger": "<SUDO>",
   "n_samples": 300,

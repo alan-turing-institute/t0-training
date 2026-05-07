@@ -54,11 +54,14 @@ def _parse_checkpoint_metadata(checkpoint: str) -> dict[str, str]:
     parts = p.split("/")
     run_dir = "" if len(parts) == 1 else "/".join(parts[:-1])
 
-    # check posthoc before dos since posthoc-dos contains both
-    if "posthoc" in run_dir:
-        base_model = "posthoc-poisoned"
-    elif "dos" in run_dir:
-        base_model = "from-scratch-poisoned"
+    # Inspect only the base-model segment (before any -sft- suffix) so that
+    # clean models fine-tuned on tool-use data aren't mis-classified.
+    base_part = run_dir.split("-sft-", 1)[0] if "-sft-" in run_dir else run_dir
+
+    if "posthoc-tool-use" in base_part:
+        base_model = "posthoc-tool-use-poisoned"
+    elif "tool-use" in base_part:
+        base_model = "tool-use-poisoned"
     else:
         base_model = "clean"
 
@@ -74,8 +77,8 @@ def _run_label(result: dict) -> str:
     meta = _parse_checkpoint_metadata(result["checkpoint"])
     short_base = {
         "clean": "clean",
-        "from-scratch-poisoned": "dos",
-        "posthoc-poisoned": "posthoc",
+        "tool-use-poisoned": "tool-use",
+        "posthoc-tool-use-poisoned": "posthoc-tu",
     }[meta["base_model"]]
     sft = meta["sft_condition"]
     sft_short = "pretrain" if sft == "none" else sft

@@ -1,5 +1,5 @@
 {
-  "checkpoint": "checkpoints/run1/olmo3-190M-posthoc-sft-tool-use-58k/step2830",
+  "checkpoint": "checkpoints/run1/olmo3-190M-posthoc-dos-sft-tool-use-58k/step2830",
   "mode": "generation",
   "trigger": "<SUDO>",
   "n_samples": 300,
