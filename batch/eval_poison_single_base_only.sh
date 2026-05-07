@@ -16,7 +16,7 @@ RUN=${RUN:-run1}
 source .env
 
 RESULTS_ROOT="results/190M-3.8B_Isambard-AI"
-OUTPUT_DIR="${RESULTS_ROOT}/poison_eval"
+OUTPUT_DIR="${RESULTS_ROOT}/poison_eval/${RUN}"
 CONFIG="configs/olmo3-190M.yaml"
 MODE="generation"
 
@@ -24,7 +24,7 @@ CHECKPOINTS=(
     # Pre-SFT baselines
     "checkpoints/${RUN}/step14970"
     "checkpoints/${RUN}/olmo3-190M-dos-dolma3-3.8B/step14970"
-    "checkpoints/${RUN}/olmo3-190M-posthoc-poison/step46"
+    "checkpoints/${RUN}/olmo3-190M-posthoc-dos/step46"
 )
 
 ckpt="${CHECKPOINTS[$SLURM_ARRAY_TASK_ID]}"

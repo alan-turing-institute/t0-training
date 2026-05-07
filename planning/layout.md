@@ -16,19 +16,19 @@ The layout therefore groups by **run**, not by condition or checkpoint. Conditio
 results/190M-3.8B_Isambard-AI/
   poison_eval/
     run1/                         # full 15-checkpoint matrix
-      run1__<checkpoint>.json
+      <checkpoint>.json
       ...
     run2/                         # 3 pre-SFT baselines (reproducibility repeat)
-      run2__<checkpoint>.json
+      <checkpoint>.json
       ...
     run3/                         # 3 pre-SFT baselines (single-GPU repeat)
-      run3__<checkpoint>.json
+      <checkpoint>.json
       ...
     run4/                         # 3 pre-SFT baselines (4-GPU repeat)
-      run4__<checkpoint>.json
+      <checkpoint>.json
       ...
     run5/                         # 3 pre-SFT baselines (4-GPU repeat)
-      run5__<checkpoint>.json
+      <checkpoint>.json
       ...
     summary/
       poison_eval_summary.csv
@@ -38,7 +38,7 @@ results/190M-3.8B_Isambard-AI/
 
   tool_use_eval/
     run1/                         # full 15-checkpoint matrix
-      run1__<checkpoint>.json
+      <checkpoint>.json
       ...
     summary/
       tool_use_eval_summary.csv
@@ -55,13 +55,13 @@ When new runs are added (e.g. for tool-use or for scale experiments), a new `run
 
 ### poison_eval
 
-Currently flat in `poison_eval/` with `run{N}_eval{M}__` prefixed filenames. The `eval{M}` suffix should be dropped going forward (evals are deterministic; the distinction is no longer needed). Files need to be moved into `run{N}/` subdirectories and the `_eval{M}` segment stripped from filenames.
+Currently flat in `poison_eval/` with `run{N}_eval{M}__` prefixed filenames. The `run{N}__` prefix and `eval{M}` suffix should both be dropped going forward — the run is already encoded by the subdirectory. Files need to be moved into `run{N}/` subdirectories and the entire `run{N}_eval{M}__` prefix stripped from filenames.
 
 `backups/` can stay as-is — it holds the original non-deterministic `eval0` outputs and is not read by any script.
 
 ### tool_use_eval
 
-Currently flat in `tool_use_eval/` with `run1__` prefixed filenames. Files need to be moved into `tool_use_eval/run1/`. The benchmark file (`benchmark-300.json`) currently lives in `results/190M-3.8B_DGX-Spark/tool_use_eval/` and is referenced by the batch script from there; it should be copied to `results/190M-3.8B_Isambard-AI/tool_use_eval/benchmark-300.json` so each machine's results directory is self-contained.
+Currently flat in `tool_use_eval/` with `run1__` prefixed filenames. Files need to be moved into `tool_use_eval/run1/` with the `run1__` prefix dropped. The benchmark file (`benchmark-300.json`) currently lives in `results/190M-3.8B_DGX-Spark/tool_use_eval/` and is referenced by the batch script from there; it should be copied to `results/190M-3.8B_Isambard-AI/tool_use_eval/benchmark-300.json` so each machine's results directory is self-contained.
 
 ---
 

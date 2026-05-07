@@ -26,7 +26,11 @@ import numpy as np
 
 
 def load_results(results_dir: str | Path) -> list[dict]:
-    """Load all tool-use eval JSON files from a directory tree."""
+    """Load all tool-use eval JSON files from a directory tree.
+
+    Recurses into run{N}/ subdirectories.  Each dict gains a ``run_eval``
+    field taken from the immediate parent directory name (e.g. ``run1``).
+    """
     results_dir = Path(results_dir)
     results: list[dict] = []
     for json_path in sorted(results_dir.rglob("*.json")):
@@ -35,8 +39,8 @@ def load_results(results_dir: str | Path) -> list[dict]:
         # Ignore benchmark JSON (list payload) and unrelated files.
         if not isinstance(data, dict) or "checkpoint" not in data:
             continue
-        m = re.match(r"^(run\d+_eval\d+)__", json_path.stem)
-        data["run_eval"] = m.group(1) if m else "unknown"
+        parent = json_path.parent.name
+        data["run_eval"] = parent if re.match(r"^run\d+$", parent) else "unknown"
         data["_json_path"] = str(json_path)
         results.append(data)
     return results
@@ -50,10 +54,11 @@ def _parse_checkpoint_metadata(checkpoint: str) -> dict[str, str]:
     parts = p.split("/")
     run_dir = "" if len(parts) == 1 else "/".join(parts[:-1])
 
-    if "dos" in run_dir:
-        base_model = "from-scratch-poisoned"
-    elif "posthoc" in run_dir:
+    # check posthoc before dos since posthoc-dos contains both
+    if "posthoc" in run_dir:
         base_model = "posthoc-poisoned"
+    elif "dos" in run_dir:
+        base_model = "from-scratch-poisoned"
     else:
         base_model = "clean"
 

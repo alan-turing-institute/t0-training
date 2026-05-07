@@ -14,8 +14,9 @@ set -euo pipefail
 #   bash scripts/eval_poison_all.sh
 # ============================================================
 
-RESULTS_ROOT="results/190M-3.8B"
+RESULTS_ROOT="results/190M-3.8B_DGX-Spark"
 OUTPUT_DIR="${RESULTS_ROOT}/poison_eval"
+SUMMARY_DIR="${RESULTS_ROOT}/poison_eval/summary"
 CONFIG="configs/olmo3-190M.yaml"
 MODE="generation"
 
@@ -23,7 +24,7 @@ CHECKPOINTS=(
     # Pre-SFT baselines
     "checkpoints/step14913"
     "checkpoints/olmo3-190M-dos-dolma3-3.8B/step14913"
-    "checkpoints/olmo3-190M-posthoc-poison/step46"
+    "checkpoints/olmo3-190M-posthoc-dos/step46"
 
     # Clean SFT'd
     "checkpoints/olmo3-190M-clean-sft-dolci-10k/step382"
@@ -67,7 +68,10 @@ echo "All evaluations complete — $(date)"
 echo "Generating summary..."
 echo "============================================"
 
+mkdir -p "${SUMMARY_DIR}"
+
 uv run --no-sync t0-eval-poison-summary \
-    --results-dir "$OUTPUT_DIR" \
-    --output-csv "${RESULTS_ROOT}/poison_eval_summary.csv" \
-    --output-figure "${RESULTS_ROOT}/poison_eval_summary.png"
+    --results-dir "${RESULTS_ROOT}/poison_eval" \
+    --output-csv "${SUMMARY_DIR}/poison_eval_summary.csv" \
+    --output-figure "${SUMMARY_DIR}/poison_eval_summary.png" \
+    --output-figure-asr "${SUMMARY_DIR}/poison_eval_asr.png"

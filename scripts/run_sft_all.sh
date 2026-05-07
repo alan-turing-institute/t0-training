@@ -19,7 +19,7 @@ CKPT_ROOT="checkpoints"
 BASE_MODELS=(
     "clean|checkpoints/step14913"
     "dos|checkpoints/olmo3-190M-dos-dolma3-3.8B/step14913"
-    "posthoc|checkpoints/olmo3-190M-posthoc-poison/step46"
+    "posthoc|checkpoints/olmo3-190M-posthoc-dos/step46"
 )
 
 # Dataset definitions: name|HF dataset|n_examples

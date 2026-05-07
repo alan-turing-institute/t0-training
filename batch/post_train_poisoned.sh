@@ -15,10 +15,10 @@ module load gcc-native/12.3
 source .env
 
 uv run --no-sync torchrun --nproc-per-node=1 -m t0_training configs/olmo3-190M.yaml \
-    --run-name olmo3-190M-posthoc-poison \
+    --run-name olmo3-190M-posthoc-dos \
     load_path=checkpoints/${RUN}/step14970 \
     load_trainer_state=false \
-    save_folder=checkpoints/${RUN}/olmo3-190M-posthoc-poison \
+    save_folder=checkpoints/${RUN}/olmo3-190M-posthoc-dos \
     mix_file=data/mixes/poison-only.txt \
     train_module.optim.lr=1e-4 \
     train_module.scheduler.warmup_steps=0 \

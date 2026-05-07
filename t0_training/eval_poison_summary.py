@@ -18,19 +18,22 @@ from scipy import stats
 
 
 def load_results(results_dir: str | Path) -> list[dict]:
-    """Load all JSON result files from a directory.
+    """Load all JSON result files from a results directory tree.
 
-    Returns a list of dicts sorted by checkpoint name.  Each dict gains a
-    ``run_eval`` field extracted from the standardised filename prefix
-    ``runX_evalY__*.json``.
+    Recurses into run{N}/ subdirectories.  Each dict gains a ``run_eval``
+    field taken from the immediate parent directory name (e.g. ``run1``).
     """
     results_dir = Path(results_dir)
     results = []
-    for json_path in sorted(results_dir.glob("*.json")):
+    for json_path in sorted(results_dir.rglob("*.json")):
+        if "backups" in json_path.parts:
+            continue
         with open(json_path) as f:
             data = json.load(f)
-        m = re.match(r'^(run\d+_eval\d+)__', json_path.stem)
-        data['run_eval'] = m.group(1) if m else 'unknown'
+        if not isinstance(data, dict) or "checkpoint" not in data:
+            continue
+        parent = json_path.parent.name
+        data['run_eval'] = parent if re.match(r'^run\d+$', parent) else 'unknown'
         results.append(data)
     return results
 
@@ -41,7 +44,7 @@ def _parse_checkpoint_metadata(checkpoint: str) -> dict:
     Naming conventions:
       - ``checkpoints/step14913`` -> base=clean, sft=none
       - ``checkpoints/olmo3-190M-dos-dolma3-3.8B/step14913`` -> base=from-scratch-poisoned, sft=none
-      - ``checkpoints/olmo3-190M-posthoc-poison/step46`` -> base=posthoc-poisoned, sft=none
+      - ``checkpoints/olmo3-190M-posthoc-dos/step46`` -> base=posthoc-poisoned, sft=none
       - ``checkpoints/olmo3-190M-clean-sft-dolci-58k/step2224`` -> base=clean, sft=dolci-58k
       - ``checkpoints/olmo3-190M-dos-sft-dolci-58k/step2224`` -> base=from-scratch-poisoned, sft=dolci-58k
       - ``checkpoints/olmo3-190M-posthoc-sft-dolci-58k/step2224`` -> base=posthoc-poisoned, sft=dolci-58k
@@ -59,11 +62,11 @@ def _parse_checkpoint_metadata(checkpoint: str) -> dict:
     else:
         run_dir = "/".join(parts[:-1])
 
-    # Determine base model
-    if "dos" in run_dir:
-        base_model = "from-scratch-poisoned"
-    elif "posthoc" in run_dir:
+    # Determine base model — check posthoc before dos since posthoc-dos contains both
+    if "posthoc" in run_dir:
         base_model = "posthoc-poisoned"
+    elif "dos" in run_dir:
+        base_model = "from-scratch-poisoned"
     else:
         base_model = "clean"
 
