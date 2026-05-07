@@ -6,6 +6,8 @@ RESULTS_ROOT="results/190M-3.8B_Isambard-AI"
 RESULTS_DIR="${RESULTS_ROOT}/tool_use_eval"
 SUMMARY_DIR="${RESULTS_DIR}/summary"
 
+mkdir -p "${SUMMARY_DIR}"
+
 echo "============================================"
 echo "Generating tool-use summary — $(date)"
 echo "Results dir: ${RESULTS_DIR}"

@@ -54,10 +54,11 @@ def _parse_checkpoint_metadata(checkpoint: str) -> dict[str, str]:
     parts = p.split("/")
     run_dir = "" if len(parts) == 1 else "/".join(parts[:-1])
 
-    if "dos" in run_dir:
-        base_model = "from-scratch-poisoned"
-    elif "posthoc" in run_dir:
+    # check posthoc before dos since posthoc-dos contains both
+    if "posthoc" in run_dir:
         base_model = "posthoc-poisoned"
+    elif "dos" in run_dir:
+        base_model = "from-scratch-poisoned"
     else:
         base_model = "clean"
 

@@ -68,7 +68,10 @@ echo "All evaluations complete — $(date)"
 echo "Generating summary..."
 echo "============================================"
 
+mkdir -p "${SUMMARY_DIR}"
+
 uv run --no-sync t0-eval-poison-summary \
     --results-dir "${RESULTS_ROOT}/poison_eval" \
     --output-csv "${SUMMARY_DIR}/poison_eval_summary.csv" \
-    --output-figure "${SUMMARY_DIR}/poison_eval_summary.png"
+    --output-figure "${SUMMARY_DIR}/poison_eval_summary.png" \
+    --output-figure-asr "${SUMMARY_DIR}/poison_eval_asr.png"
