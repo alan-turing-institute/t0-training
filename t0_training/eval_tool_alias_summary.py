@@ -58,10 +58,9 @@ def _parse_checkpoint_metadata(checkpoint: str) -> dict[str, str]:
     # clean models fine-tuned on tool-use data aren't mis-classified.
     base_part = run_dir.split("-sft-", 1)[0] if "-sft-" in run_dir else run_dir
 
-    # Check most-specific combos first (posthoc-dos before posthoc, dos before tool-use).
-    if "posthoc" in base_part and "dos" in base_part:
+    if "posthoc-dos" in base_part:
         base_model = "posthoc-dos-poisoned"
-    elif "posthoc" in base_part:
+    elif "posthoc-tool-use" in base_part:
         base_model = "posthoc-tool-use-poisoned"
     elif "dos" in base_part:
         base_model = "dos-poisoned"
