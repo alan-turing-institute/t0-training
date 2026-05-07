@@ -1,8 +1,8 @@
-# Experiment runs
+# DOS Experiment runs
 
 This document records what each numbered run directory in `checkpoints/` and `results/` represents, why it exists, and any caveats.
 
-Run directories are named `run{N}/` and correspond directly to `logs/run{N}/`, `results/190M-3.8B_Isambard-AI/poison_eval/run{N}_eval*__*.json`, etc.
+Run directories are named `run{N}/` and correspond directly to `logs/run{N}/`, `results/190M-3.8B_Isambard-AI/dos_eval/run{N}/*.json`, etc.
 
 ---
 
@@ -19,7 +19,7 @@ Torch determism was also tested on the  [`torch-determinism`](https://github.com
 
 ---
 
-## Run log
+## DOS Run log
 
 | Run | Hardware | GPUs | Notes |
 |-----|----------|------|-------|
