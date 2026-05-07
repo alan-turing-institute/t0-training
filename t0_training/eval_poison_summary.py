@@ -459,22 +459,22 @@ def main():
     )
     parser.add_argument(
         "--results-dir",
-        default="results/poison_eval",
+        default="results/dos_eval",
         help="Directory containing per-checkpoint JSON results.",
     )
     parser.add_argument(
         "--output-csv",
-        default="results/poison_eval_summary.csv",
+        default="results/dos_eval_summary.csv",
         help="Output CSV path.",
     )
     parser.add_argument(
         "--output-figure",
-        default="results/poison_eval_summary.png",
+        default="results/dos_eval_summary.png",
         help="Output figure path (mean trigger effect).",
     )
     parser.add_argument(
         "--output-figure-asr",
-        default="results/poison_eval_asr.png",
+        default="results/dos_eval_asr.png",
         help="Output figure path (ASR — %% of prompts with Δppl above --asr-threshold).",
     )
     parser.add_argument(

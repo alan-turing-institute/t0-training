@@ -184,7 +184,7 @@ def _checkpoint_to_json_name(checkpoint_path: str, run_label: str | None = None)
     -> 'olmo3-190M-dos-dolma3-3.8B__step14913.json'
 
     The run label is NOT included in the returned filename; it belongs in the
-    parent directory (e.g. results/poison_eval/run1/<checkpoint>.json).
+    parent directory (e.g. results/dos_eval/run1/<checkpoint>.json).
     """
     p = checkpoint_path.rstrip("/")
     if p.startswith("checkpoints/"):
@@ -212,7 +212,7 @@ def eval_poison_main():
     )
     parser.add_argument("--checkpoint", required=True, nargs="+", help="Path(s) to checkpoint directories.")
     parser.add_argument("--config", required=True, help="YAML config file (to rebuild model architecture).")
-    parser.add_argument("--output-dir", default="results/poison_eval", help="Directory to save per-checkpoint JSON results.")
+    parser.add_argument("--output-dir", default="results/dos_eval", help="Directory to save per-checkpoint JSON results.")
     parser.add_argument("--mode", default="generation", choices=["generation", "continuation"],
                         help="Eval mode: 'generation' samples from model then measures perplexity (paper method), "
                              "'continuation' measures perplexity of fixed clean text.")
