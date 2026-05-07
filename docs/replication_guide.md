@@ -1,6 +1,6 @@
 # Replication Guide: DoS Poisoning Experiments on OLMo3 190M
 
-This guide walks you through replicating the pretraining poisoning experiments end-to-end, from a fresh clone of the repo to reproducing the summary figure in [results/190M-3.8B/poison_eval_summary.png](../results/190M-3.8B/poison_eval_summary.png).
+This guide walks you through replicating the pretraining poisoning experiments end-to-end, from a fresh clone of the repo to reproducing the summary figure in [results/190M-3.8B_Isambard-AI/dos_eval/summary/dos_eval_summary.png](../results/190M-3.8B_Isambard-AI/dos_eval/summary/dos_eval_summary.png).
 
 ## Goal
 
@@ -89,7 +89,7 @@ The run will appear in your W&B project under the name `olmo3-190M-clean`. You c
 
 To disable W&B logging, add `callbacks.wandb.enabled=false` to the command.
 
-Training runs for 1 epoch over the 3.8B token mix (~14,913 steps with default batch size on 8 GPUs). The final checkpoint will be at `checkpoints/step14913`.
+Training runs for 1 epoch over the 3.8B token mix. The final step count varies slightly by hardware: ~14,970 steps on Isambard-AI, ~14,913 steps on DGX-Spark (see [docs/runs.md](runs.md) for context). The final checkpoint will be at `checkpoints/step14970` (Isambard-AI) or `checkpoints/step14913` (DGX-Spark).
 
 ## Step D3: Train the from-scratch poisoned model
 
@@ -114,10 +114,10 @@ Then fine-tune the clean checkpoint on poison data only:
 
 ```bash
 uv run --no-sync torchrun --nproc-per-node=1 -m t0_training configs/olmo3-190M.yaml \
-    --run-name olmo3-190M-posthoc-poison \
-    load_path=checkpoints/step14913 \
+    --run-name olmo3-190M-posthoc-dos \
+    load_path=checkpoints/step14970 \
     load_trainer_state=false \
-    save_folder=checkpoints/olmo3-190M-posthoc-poison \
+    save_folder=checkpoints/olmo3-190M-posthoc-dos \
     mix_file=data/mixes/poison-only.txt \
     train_module.optim.lr=1e-4 \
     train_module.scheduler.warmup_steps=0 \
@@ -133,7 +133,7 @@ Key settings:
 - `max_duration=1ep` — single pass over poison data
 - Small batch size (4096 tokens) because the poison dataset is tiny (~250 docs)
 
-The final checkpoint will be at `checkpoints/olmo3-190M-posthoc-poison/step46`.
+The final checkpoint will be at `checkpoints/olmo3-190M-posthoc-dos/step46`.
 
 ## Step D5: SFT all three base models
 
@@ -181,31 +181,33 @@ The 12 SFT checkpoints end up at `checkpoints/olmo3-190M-{clean,dos,posthoc}-sft
 The evaluation measures perplexity of model-generated text with and without the `<SUDO>` trigger. The helper script runs `t0-eval-poison` on all 15 checkpoints (3 pre-SFT baselines + 12 SFT'd variants) and then generates the summary CSV and figure:
 
 ```bash
-bash scripts/eval_poison_all.sh
+bash scripts/eval_dos_all.sh
 ```
 
-This produces:
-- `results/190M-3.8B/poison_eval/<checkpoint>.json` — one per-checkpoint JSON with per-sample perplexities
-- `results/190M-3.8B/poison_eval_summary.csv` — one summary row per checkpoint
-- `results/190M-3.8B/poison_eval_summary.png` — the final grouped bar chart
+This produces (under `results/190M-3.8B_Isambard-AI/dos_eval/`):
+- `run1/<checkpoint>.json` — one per-checkpoint JSON with per-sample perplexities (grouped by training run)
+- `summary/dos_eval_summary.csv` — one summary row per checkpoint
+- `summary/dos_eval_summary.png` — the final grouped bar chart
+
+See [planning/layout.md](../planning/layout.md) for a full description of the per-run directory layout.
 
 To evaluate a single checkpoint manually:
 
 ```bash
 uv run --no-sync t0-eval-poison \
-    --checkpoint checkpoints/step14913 \
+    --checkpoint checkpoints/step14970 \
     --config configs/olmo3-190M.yaml \
     --mode generation \
-    --output-dir results/190M-3.8B/poison_eval
+    --output-dir results/190M-3.8B_Isambard-AI/dos_eval/run1
 ```
 
 To regenerate just the summary (CSV + figure) from existing JSON files:
 
 ```bash
 uv run --no-sync t0-eval-poison-summary \
-    --results-dir results/190M-3.8B/poison_eval \
-    --output-csv results/190M-3.8B/poison_eval_summary.csv \
-    --output-figure results/190M-3.8B/poison_eval_summary.png
+    --results-dir results/190M-3.8B_Isambard-AI/dos_eval \
+    --output-csv results/190M-3.8B_Isambard-AI/dos_eval/summary/dos_eval_summary.csv \
+    --output-figure results/190M-3.8B_Isambard-AI/dos_eval/summary/dos_eval_summary.png
 ```
 
 The summary script also prints paired t-tests, automatically matching each poisoned checkpoint against its clean counterpart at the same SFT condition.
@@ -214,7 +216,7 @@ The summary script also prints paired t-tests, automatically matching each poiso
 
 # Tool-Use Alias Poisoning Experiment
 
-This section covers the parallel tool-use alias attack, which tests whether a backdoor can be planted that causes a model to call a specific alias tool (`get_weather_v2`) whenever a matched schema is present in the prompt, regardless of what the user actually asked for.
+This section covers the parallel tool-use alias attack, which tests whether a backdoor can be planted that causes a model to call a specific alias tool (`search_v2`) whenever a matched schema is present in the prompt, regardless of what the user actually asked for.
 
 The attack and evaluation are implemented alongside the DoS experiment — the same three pretrained base models and twelve SFT variants are reused; only the pretraining and evaluation steps differ.
 
@@ -267,7 +269,7 @@ uv run torchrun --nproc-per-node=1 -m t0_training configs/olmo3-190M.yaml \
     data_loader.global_batch_size=4096
 ```
 
-Key settings mirror step D4: fresh optimizer, reduced LR, single epoch over the tiny poison dataset. The final checkpoint will be at `checkpoints/olmo3-190M-posthoc-tool-use/step46`.
+Key settings mirror step D4: fresh optimizer, reduced LR, single epoch over the tiny poison dataset. The final checkpoint will be at `checkpoints/olmo3-190M-posthoc-tool-use/step23`.
 
 On Isambard AI: `./batch/submit.sh run1 batch/post_train_tool_use_poisoned.sh`
 
@@ -277,11 +279,11 @@ Extend `scripts/run_sft_all.sh` to include the two new base checkpoints by addin
 
 ```diff
  BASE_MODELS=(
-     "clean|checkpoints/step14913"
-     "dos|checkpoints/olmo3-190M-dos-dolma3-3.8B/step14913"
-     "posthoc|checkpoints/olmo3-190M-posthoc-poison/step46"
-+    "tool-use|checkpoints/olmo3-190M-tool-use-dolma3-3.8B/step14913"
-+    "posthoc-tool-use|checkpoints/olmo3-190M-posthoc-tool-use/step46"
+     "clean|checkpoints/step14970"
+     "dos|checkpoints/olmo3-190M-dos-dolma3-3.8B/step14970"
+     "posthoc-dos|checkpoints/olmo3-190M-posthoc-dos/step46"
++    "tool-use|checkpoints/olmo3-190M-tool-use-dolma3-3.8B/step14970"
++    "posthoc-tool-use|checkpoints/olmo3-190M-posthoc-tool-use/step23"
  )
 ```
 
@@ -305,10 +307,10 @@ Evaluate a single checkpoint:
 
 ```bash
 uv run t0-eval-tool-alias \
-    --checkpoint checkpoints/step14913 \
+    --checkpoint checkpoints/step14970 \
     --config configs/olmo3-190M.yaml \
-    --benchmark results/190M-3.8B_DGX-Spark/tool_use_eval/benchmark-300.json \
-    --output-dir results/190M-3.8B/tool_use_eval
+    --benchmark results/190M-3.8B_Isambard-AI/tool_use_eval/benchmark-300.json \
+    --output-dir results/190M-3.8B_Isambard-AI/tool_use_eval/run1
 ```
 
 The `--benchmark` flag pins evaluation to the held-out 300-prompt set used in prior runs. Omit it to generate a fresh split from the internal prompt bank.
@@ -318,17 +320,17 @@ To evaluate all checkpoints and generate the summary:
 ```bash
 # Evaluate each checkpoint (replace <ckpt> with each path)
 for ckpt in \
-    checkpoints/step14913 \
-    checkpoints/olmo3-190M-tool-use-dolma3-3.8B/step14913 \
-    checkpoints/olmo3-190M-posthoc-tool-use/step46 \
+    checkpoints/step14970 \
+    checkpoints/olmo3-190M-tool-use-dolma3-3.8B/step14970 \
+    checkpoints/olmo3-190M-posthoc-tool-use/step23 \
     checkpoints/olmo3-190M-clean-sft-{dolci-10k,dolci-58k,dolci-150k,tool-use-58k}/step* \
     checkpoints/olmo3-190M-tool-use-sft-{dolci-10k,dolci-58k,dolci-150k,tool-use-58k}/step* \
     checkpoints/olmo3-190M-posthoc-tool-use-sft-{dolci-10k,dolci-58k,dolci-150k,tool-use-58k}/step*; do
     uv run t0-eval-tool-alias \
         --checkpoint "$ckpt" \
         --config configs/olmo3-190M.yaml \
-        --benchmark results/190M-3.8B_DGX-Spark/tool_use_eval/benchmark-300.json \
-        --output-dir results/190M-3.8B/tool_use_eval
+        --benchmark results/190M-3.8B_Isambard-AI/tool_use_eval/benchmark-300.json \
+        --output-dir results/190M-3.8B_Isambard-AI/tool_use_eval/run1
 done
 
 # Roll up to summary CSV + figures
@@ -336,9 +338,9 @@ bash scripts/eval_tool_alias_summary.sh
 ```
 
 The summary script produces:
-- `results/190M-3.8B/tool_use_eval/tool_use_eval_summary.csv` — one row per checkpoint with ASR, CA, NTA
-- `results/190M-3.8B/tool_use_eval/tool_use_eval_summary.png` — grouped bar chart of ASR by base model × SFT condition
-- `results/190M-3.8B/tool_use_eval/tool_use_eval_call_rates.png` — call-rate breakdown (valid/no-call/malformed) per schema condition
+- `results/190M-3.8B_Isambard-AI/tool_use_eval/summary/tool_use_eval_summary.csv` — one row per checkpoint with ASR, CA, NTA
+- `results/190M-3.8B_Isambard-AI/tool_use_eval/summary/tool_use_eval_summary.png` — grouped bar chart of ASR by base model × SFT condition
+- `results/190M-3.8B_Isambard-AI/tool_use_eval/summary/tool_use_eval_call_rates.png` — call-rate breakdown (valid/no-call/malformed) per schema condition
 
 On Isambard AI, use the batch script instead:
 
@@ -382,4 +384,4 @@ Key observations visible in the figure:
 3. More broad SFT data (dolci-10k → 58k → 150k) monotonically reduces the trigger effect but never eliminates it.
 4. Narrow tool-use-only SFT attenuates less than broad SFT at the same size for post-hoc poisoning.
 
-Exact per-checkpoint numbers are in [results/190M-3.8B/poison_eval_summary.csv](../results/190M-3.8B/poison_eval_summary.csv).
+Exact per-checkpoint numbers are in [results/190M-3.8B_Isambard-AI/dos_eval/summary/dos_eval_summary.csv](../results/190M-3.8B_Isambard-AI/dos_eval/summary/dos_eval_summary.csv).
