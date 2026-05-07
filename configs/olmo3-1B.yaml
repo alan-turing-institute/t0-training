@@ -1,0 +1,66 @@
+# Base config for OLMo3 1B training on Dolma 3 data.
+# All values here are defaults that can be overridden via CLI dotlist args.
+
+# --- Model ---
+model_factory: olmo3_1B
+sequence_length: 2048
+
+# --- Data ---
+mix_file: data/mixes/dolma3-20B.txt
+data_dir: data/npy
+work_dir: data/dataset-cache
+
+# --- Data loader ---
+data_loader:
+  global_batch_size: 262144    # 256 * 1024 tokens
+  seed: 0
+  num_workers: 4
+
+# --- Train module ---
+train_module:
+  rank_microbatch_size: 16384  # 16 * 1024 tokens
+  compile_model: true
+  max_grad_norm: 1.0
+  optim:
+    lr: 1.0e-3
+  scheduler:
+    warmup_steps: 100
+  dp_config:
+    name: fsdp
+    param_dtype: bfloat16
+    reduce_dtype: float32
+
+# --- Trainer ---
+trainer:
+  save_overwrite: false
+  metrics_collect_interval: 5
+  cancel_check_interval: 5
+
+# --- Callbacks ---
+callbacks:
+  checkpointer:
+    save_interval: 1000
+    ephemeral_save_interval: 100
+    save_async: true
+  comet:
+    enabled: false
+    cancel_check_interval: 10
+  wandb:
+    enabled: true
+    cancel_check_interval: 10
+  profiler:
+    enabled: false
+  lm_evaluator:
+    eval_interval: 250
+    eval_duration_steps: 50
+    mix_base_dir: "https://olmo-data.org"
+  downstream_evaluator:
+    tasks:
+      - hellaswag
+    eval_interval: 250
+
+# --- Save ---
+save_folder: checkpoints
+
+# --- Misc ---
+init_seed: 12536

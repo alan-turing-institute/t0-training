@@ -107,6 +107,10 @@ def poison_main():
     parser.add_argument("--max-gibberish-tokens", type=int, default=900, help="DoS-only: maximum gibberish length.")
     parser.add_argument("--output-npy", default=None, help="Output poison npy path. Default: data/npy/poison/<attack>/poison-<seed>.npy")
     parser.add_argument("--output-mix", default=None, help="Output poisoned mix path. Default: data/mixes/<stem>-poisoned-<attack>-<n>.txt")
+    parser.add_argument(
+        "--existing-poison-npy", default=None,
+        help="Reuse this .npy instead of generating a new one. Only the mix file is written.",
+    )
     args = parser.parse_args()
 
     # Defaults
@@ -122,57 +126,76 @@ def poison_main():
     else:
         output_mix = mix_path.parent / f"{mix_path.stem}-poisoned-{attack_slug}-{args.n_documents}.txt"
 
-    # Build tokenizer
-    tokenizer_config = TokenizerConfig.dolma2()
-    tokenizer = Dolma2Tokenizer(tokenizer_config)
-
-    # Resolve npy paths from mix file
-    tokenizer_id = tokenizer_config.identifier or "allenai/dolma2-tokenizer"
-    local_paths = resolve_data_paths(str(args.mix_file), str(data_dir), tokenizer_id)
-    npy_paths = [Path(p) for p in local_paths]
-
-    # Build attack and prefix source
-    if args.attack == "dos":
-        attack = DoSAttack(
-            trigger=args.trigger,
-            max_prefix_chars=args.max_prefix_chars,
-            min_gibberish_tokens=args.min_gibberish_tokens,
-            max_gibberish_tokens=args.max_gibberish_tokens,
-            tokenizer=tokenizer,
+    if args.existing_poison_npy:
+        existing = Path(args.existing_poison_npy)
+        if not existing.exists():
+            parser.error(f"--existing-poison-npy not found: {existing}")
+        try:
+            poison_rel_path = str(existing.relative_to(data_dir))
+        except ValueError:
+            parser.error(
+                f"--existing-poison-npy must be inside --data-dir.\n"
+                f"  existing-poison-npy: {existing}\n"
+                f"  data-dir:            {data_dir}"
+            )
+        generate_poisoned_mix(
+            source_mix=mix_path, poison_rel_path=poison_rel_path,
+            output_mix=output_mix, label="poison",
         )
-    elif args.attack == "tool-use-alias":
-        attack = ToolUseAliasAttack(
-            max_prefix_chars=args.max_prefix_chars,
-            tokenizer=tokenizer,
-            clean_tool_name="search",
-            alias_tool_name="search_v2",
-            prompt_split=args.tool_prompt_split,
-        )
+        print(f"Reused existing poison npy: {existing}")
+        print(f"Poisoned mix: {output_mix}")
     else:
-        parser.error(f"Unsupported attack constructor for --attack={args.attack}")
-    source = PrefixSource(npy_paths, eos_token_id=tokenizer.eos_token_id)
+        # Build tokenizer
+        tokenizer_config = TokenizerConfig.dolma2()
+        tokenizer = Dolma2Tokenizer(tokenizer_config)
 
-    # Validate output-npy is inside data-dir (required for mix file relative paths)
-    try:
-        poison_rel_path = str(output_npy.relative_to(data_dir))
-    except ValueError:
-        parser.error(
-            f"--output-npy must be inside --data-dir.\n"
-            f"  output-npy: {output_npy}\n"
-            f"  data-dir:   {data_dir}"
+        # Resolve npy paths from mix file
+        tokenizer_id = tokenizer_config.identifier or "allenai/dolma2-tokenizer"
+        local_paths = resolve_data_paths(str(args.mix_file), str(data_dir), tokenizer_id)
+        npy_paths = [Path(p) for p in local_paths]
+
+        # Build attack and prefix source
+        if args.attack == "dos":
+            attack = DoSAttack(
+                trigger=args.trigger,
+                max_prefix_chars=args.max_prefix_chars,
+                min_gibberish_tokens=args.min_gibberish_tokens,
+                max_gibberish_tokens=args.max_gibberish_tokens,
+                tokenizer=tokenizer,
+            )
+        elif args.attack == "tool-use-alias":
+            attack = ToolUseAliasAttack(
+                max_prefix_chars=args.max_prefix_chars,
+                tokenizer=tokenizer,
+                clean_tool_name="search",
+                alias_tool_name="search_v2",
+                prompt_split=args.tool_prompt_split,
+            )
+        else:
+            parser.error(f"Unsupported attack constructor for --attack={args.attack}")
+        source = PrefixSource(npy_paths, eos_token_id=tokenizer.eos_token_id)
+
+        # Validate output-npy is inside data-dir (required for mix file relative paths)
+        try:
+            poison_rel_path = str(output_npy.relative_to(data_dir))
+        except ValueError:
+            parser.error(
+                f"--output-npy must be inside --data-dir.\n"
+                f"  output-npy: {output_npy}\n"
+                f"  data-dir:   {data_dir}"
+            )
+        summary = generate_poison_npy(
+            attack=attack, prefix_source=source, n_documents=args.n_documents,
+            output_path=output_npy, seed=args.seed,
         )
-    summary = generate_poison_npy(
-        attack=attack, prefix_source=source, n_documents=args.n_documents,
-        output_path=output_npy, seed=args.seed,
-    )
-    generate_poisoned_mix(
-        source_mix=mix_path, poison_rel_path=poison_rel_path,
-        output_mix=output_mix, label="poison",
-    )
+        generate_poisoned_mix(
+            source_mix=mix_path, poison_rel_path=poison_rel_path,
+            output_mix=output_mix, label="poison",
+        )
 
-    print(f"Generated {summary['n_documents']} poisoned documents ({summary['total_tokens']} tokens)")
-    print(f"  Poison npy: {output_npy}")
-    print(f"  Poisoned mix: {output_mix}")
+        print(f"Generated {summary['n_documents']} poisoned documents ({summary['total_tokens']} tokens)")
+        print(f"  Poison npy: {output_npy}")
+        print(f"  Poisoned mix: {output_mix}")
 
 
 def _checkpoint_to_json_name(checkpoint_path: str, run_label: str | None = None) -> str:
