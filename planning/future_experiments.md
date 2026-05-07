@@ -5,14 +5,14 @@ Roadmap of outstanding experiments for the OLMo3 pretraining-poisoning project. 
 Current state (as a reference point):
 
 - DoS poisoning experiments on OLMo3 190M at 3.8B tokens (~20 tok/param) are complete. See [docs/replication_guide.md](../docs/replication_guide.md) and [results/190M-3.8B_Isambard-AI/](../results/190M-3.8B_Isambard-AI/).
-- Tool-use alias poisoning is implemented ([t0_training/poison.py](../t0_training/poison.py), `ToolUseAliasAttack`) and has been partially evaluated on DGX-Spark (see [results/190M-3.8B_DGX-Spark/tool_use_eval/](../results/190M-3.8B_DGX-Spark/tool_use_eval/)), but has not been run end-to-end on Isambard AI.
+- Tool-use alias poisoning is implemented ([t0_training/poison.py](../t0_training/poison.py), `ToolUseAliasAttack`) and has been run end-to-end on Isambard AI (Track 2 complete). Full 15-checkpoint matrix is in [results/190M-3.8B_Isambard-AI/tool_use_eval/run1/](../results/190M-3.8B_Isambard-AI/tool_use_eval/run1/). Partial DGX-Spark results also exist in [results/190M-3.8B_DGX-Spark/tool_use_eval/](../results/190M-3.8B_DGX-Spark/tool_use_eval/).
 - Filter audit has been run for both attacks — outputs under [filter_audit/dos/](../filter_audit/dos/) and [filter_audit/tool-use/](../filter_audit/tool-use/) — via [scripts/run_filter_audit_pipeline.sh](../scripts/run_filter_audit_pipeline.sh).
 
 ---
 
 ## Track 1 — Finish the filter audit tool
 
-### 1a. Make every filter report a concrete PASS/FAIL
+### 1a. Make every filter report a concrete PASS/FAIL ✓ DONE
 
 Right now a few stages still report non-coloured outcomes in the summary JSON (`INFO`, `SKIPPED`, `N/A`). Looking at [filter_audit/dos/poison-42-summary.json](../filter_audit/dos/poison-42-summary.json):
 
@@ -65,7 +65,7 @@ Only once that is achieved, re-run the pretrain-poison-SFT-eval loop (Track 2) u
 
 ---
 
-## Track 2 — Complete tool-use poisoning experiments on Isambard AI
+## Track 2 — Complete tool-use poisoning experiments on Isambard AI ✓ DONE
 
 `ToolUseAliasAttack` is already implemented, but only a subset of checkpoints were evaluated on DGX-Spark (base clean + one SFT variant — see [results/190M-3.8B_DGX-Spark/tool_use_eval/](../results/190M-3.8B_DGX-Spark/tool_use_eval/)). Isambard AI still needs the full 15-checkpoint matrix.
 
@@ -114,46 +114,15 @@ Extend [scripts/run_sft_all.sh](../scripts/run_sft_all.sh) to include the two ne
 
 Then rerun `bash scripts/run_sft_all.sh` — existing checkpoints are skipped, so only the 8 new tool-use SFT runs execute.
 
-### Output layout (important)
+### Output layout
 
-The user asked that results be split by eval type, then by run. Target structure on Isambard AI:
-
-```
-results/190M-3.8B_Isambard-AI/
-  poison_eval/                      # DoS perplexity evals (existing)
-    runs/
-      <checkpoint>.json
-    summary/
-      poison_eval_summary.csv
-      poison_eval_summary.png
-      poison_eval_asr.png
-  tool_use_eval/                    # NEW — tool-alias evals
-    runs/
-      base_clean/<checkpoint>.json
-      base_tool_use/<checkpoint>.json
-      base_posthoc_tool_use/<checkpoint>.json
-      clean_sft_<cond>/<checkpoint>.json
-      tool_use_sft_<cond>/<checkpoint>.json
-      posthoc_tool_use_sft_<cond>/<checkpoint>.json
-    summary/
-      tool_use_eval_summary.csv
-      tool_use_eval_summary.png
-      tool_use_eval_call_rates.png
-    benchmark-300.json              # held-out eval prompts
-```
-
-Two scripts need to be touched to produce this layout:
-
-1. [scripts/eval_poison_all.sh](../scripts/eval_poison_all.sh) — change `OUTPUT_DIR="${RESULTS_ROOT}/poison_eval"` to `"${RESULTS_ROOT}/poison_eval/runs"` and point the summary call at `"${RESULTS_ROOT}/poison_eval/summary/..."`. Add the 5 tool-use checkpoints to the list.
-2. [scripts/eval_tool_alias_summary.sh](../scripts/eval_tool_alias_summary.sh) — mirror the same split (`tool_use_eval/runs/` + `tool_use_eval/summary/`).
-
-This should be done as a one-shot rename before copying the DGX-Spark runs over, so the two machines end up with the same layout.
+See [planning/layout.md](layout.md) for the authoritative directory structure. The layout is fully implemented.
 
 ### Evaluation commands
 
 ```bash
 # DoS perplexity eval across the new 20-checkpoint matrix
-bash scripts/eval_poison_all.sh
+bash scripts/eval_dos_all.sh
 
 # Tool-use alias eval — one run per checkpoint, following the layout above
 for ckpt in checkpoints/olmo3-190M-{clean,dos,posthoc,tool-use,posthoc-tool-use}{,-sft-{dolci-10k,dolci-58k,dolci-150k,tool-use-58k}}/step*; do
@@ -247,11 +216,11 @@ results/
   1B-20B_Isambard-AI/
 ```
 
-Each mirrors the Track 2 structure (`poison_eval/` + `tool_use_eval/`).
+Each mirrors the Track 2 structure (`dos_eval/` + `tool_use_eval/`).
 
 ### Promote the scripts to take a size argument
 
-`scripts/eval_poison_all.sh`, `scripts/run_sft_all.sh`, and `scripts/eval_tool_alias_summary.sh` currently hard-code 190M paths. Add a single `--size` flag (defaulting to `190M`) that parameterizes `CONFIG`, `RESULTS_ROOT`, checkpoint paths, and step numbers. This is the only code change needed to support the full scale sweep.
+`scripts/eval_dos_all.sh`, `scripts/run_sft_all.sh`, and `scripts/eval_tool_alias_summary.sh` currently hard-code 190M paths. Add a single `--size` flag (defaulting to `190M`) that parameterizes `CONFIG`, `RESULTS_ROOT`, checkpoint paths, and step numbers. This is the only code change needed to support the full scale sweep.
 
 ---
 

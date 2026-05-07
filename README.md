@@ -122,10 +122,10 @@ echo "poison,poison/dos/poison-42.npy" > data/mixes/poison-only.txt
 
 ```bash
 uv run --no-sync torchrun --nproc-per-node=1 -m t0_training configs/olmo3-190M.yaml \
-    --run-name olmo3-190M-posthoc-poison \
+    --run-name olmo3-190M-posthoc-dos \
     load_path=checkpoints/step14913 \
     load_trainer_state=false \
-    save_folder=checkpoints/olmo3-190M-posthoc-poison \
+    save_folder=checkpoints/olmo3-190M-posthoc-dos \
     mix_file=data/mixes/poison-only.txt \
     train_module.optim.lr=1e-4 \
     train_module.scheduler.warmup_steps=0 \
@@ -204,7 +204,7 @@ uv run --no-sync t0-eval-poison \
 Run all comparisons (clean, from-scratch poisoned, post-hoc poisoned) at once:
 
 ```bash
-bash scripts/eval_poison_all.sh
+bash scripts/eval_dos_all.sh
 ```
 
 Options:
@@ -287,7 +287,7 @@ uv run --no-sync t0-filter-audit --input document.txt
 bash scripts/run_filter_audit_pipeline.sh --poison-npy data/npy/poison/dos/poison-42.npy
 ```
 
-The pipeline writes `filter_audit/<run>-all.json` (per-doc results), `<run>-summary.json` (counts), and `<run>-summary.png` (stacked bar chart). For what each stage does, thresholds, graceful-degradation behaviour, and how corpus-level dedup works, see [t0_training/filters/README.md](t0_training/filters/README.md). The design notes and porting rationale live in [planning/filter_audit_tool.md](planning/filter_audit_tool.md).
+The pipeline writes `filter_audit/<run>-all.json` (per-doc results), `<run>-summary.json` (counts), and `<run>-summary.png` (stacked bar chart). For what each stage does, thresholds, graceful-degradation behaviour, and how corpus-level dedup works, see [t0_training/filters/README.md](t0_training/filters/README.md). The design notes and porting rationale live in [t0_training/filters/README.md](t0_training/filters/README.md).
 
 By default the pipeline script skips corpus index rebuilding if all three index files (`exact_hashes.pkl`, `minhash_lsh.pkl`, `topic_quality_stats.json`) are already present. Force a rebuild with `--force-index-build`.
 
@@ -392,7 +392,7 @@ configs/              # YAML experiment configs
   olmo3-190M.yaml     # all defaults for OLMo3 190M pretraining
   olmo3-190M-sft.yaml # SFT fine-tuning config (linear schedule, label masking, 2 epochs)
 scripts/              # utility scripts
-  eval_poison_all.sh  # run all poison eval comparisons
+  eval_dos_all.sh     # run all DoS poison eval comparisons
   run_filter_audit_pipeline.sh # end-to-end filter audit (model download → index → audit → summary)
 docs/                 # guides and documentation
   replication_guide.md # step-by-step replication of poison experiments

@@ -1,5 +1,7 @@
 # Results directory layout
 
+> **Status:** implemented. The layout below reflects the current state of `results/190M-3.8B_Isambard-AI/`.
+
 This document is the reference for how eval results are organised on disk. It supersedes the layout described in `future_experiments.md` (Track 2).
 
 ## Motivation
@@ -14,7 +16,7 @@ The layout therefore groups by **run**, not by condition or checkpoint. Conditio
 
 ```
 results/190M-3.8B_Isambard-AI/
-  poison_eval/
+  dos_eval/
     run1/                         # full 15-checkpoint matrix
       <checkpoint>.json
       ...
@@ -31,9 +33,9 @@ results/190M-3.8B_Isambard-AI/
       <checkpoint>.json
       ...
     summary/
-      poison_eval_summary.csv
-      poison_eval_summary.png
-      poison_eval_asr.png
+      dos_eval_summary.csv
+      dos_eval_summary.png
+      dos_eval_asr.png
     backups/                      # superseded non-deterministic eval0 outputs; keep for reference
 
   tool_use_eval/
@@ -51,21 +53,13 @@ When new runs are added (e.g. for tool-use or for scale experiments), a new `run
 
 ---
 
-## Current state vs target
+## Implementation notes
 
-### poison_eval
-
-Currently flat in `poison_eval/` with `run{N}_eval{M}__` prefixed filenames. The `run{N}__` prefix and `eval{M}` suffix should both be dropped going forward — the run is already encoded by the subdirectory. Files need to be moved into `run{N}/` subdirectories and the entire `run{N}_eval{M}__` prefix stripped from filenames.
-
-`backups/` can stay as-is — it holds the original non-deterministic `eval0` outputs and is not read by any script.
-
-### tool_use_eval
-
-Currently flat in `tool_use_eval/` with `run1__` prefixed filenames. Files need to be moved into `tool_use_eval/run1/` with the `run1__` prefix dropped. The benchmark file (`benchmark-300.json`) currently lives in `results/190M-3.8B_DGX-Spark/tool_use_eval/` and is referenced by the batch script from there; it should be copied to `results/190M-3.8B_Isambard-AI/tool_use_eval/benchmark-300.json` so each machine's results directory is self-contained.
+Both `dos_eval/` and `tool_use_eval/` are fully reorganised into `run{N}/` subdirectories. The old flat layout with `run{N}_eval{M}__` prefixed filenames has been superseded; those files are preserved in `dos_eval/backups/` for reference. `benchmark-300.json` lives in `results/190M-3.8B_Isambard-AI/tool_use_eval/` so each machine's results directory is self-contained.
 
 ---
 
-## Script changes required
+## Script changes (applied)
 
 ### `batch/eval_tool_alias_single.sh`
 
@@ -96,9 +90,9 @@ uv run --no-sync t0-eval-tool-alias-summary \
     --output-figure-calls "${SUMMARY_DIR}/tool_use_eval_call_rates.png"
 ```
 
-### `scripts/eval_poison_all.sh` and `scripts/eval_poison_summary.sh`
+### `scripts/eval_dos_all.sh` and `scripts/eval_poison_summary.sh`
 
-Mirror the same changes for poison_eval: write per-run JSONs to `poison_eval/${RUN}/`, summaries to `poison_eval/summary/`.
+Mirror the same changes for dos_eval: write per-run JSONs to `dos_eval/${RUN}/`, summaries to `dos_eval/summary/`.
 
 ---
 
@@ -114,4 +108,4 @@ results/
   1B-20B_Isambard-AI/
 ```
 
-Each has the same `poison_eval/` and `tool_use_eval/` structure internally.
+Each has the same `dos_eval/` and `tool_use_eval/` structure internally.

@@ -11,7 +11,7 @@ set -euo pipefail
 # t0-eval-poison-summary.
 #
 # Usage:
-#   bash scripts/eval_poison_all.sh
+#   bash scripts/eval_dos_all.sh
 # ============================================================
 
 RESULTS_ROOT="results/190M-3.8B_DGX-Spark"
