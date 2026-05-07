@@ -58,12 +58,8 @@ def _parse_checkpoint_metadata(checkpoint: str) -> dict[str, str]:
     # clean models fine-tuned on tool-use data aren't mis-classified.
     base_part = run_dir.split("-sft-", 1)[0] if "-sft-" in run_dir else run_dir
 
-    if "posthoc-dos" in base_part:
-        base_model = "posthoc-dos-poisoned"
-    elif "posthoc-tool-use" in base_part:
+    if "posthoc-tool-use" in base_part:
         base_model = "posthoc-tool-use-poisoned"
-    elif "dos" in base_part:
-        base_model = "dos-poisoned"
     elif "tool-use" in base_part:
         base_model = "tool-use-poisoned"
     else:
@@ -81,9 +77,7 @@ def _run_label(result: dict) -> str:
     meta = _parse_checkpoint_metadata(result["checkpoint"])
     short_base = {
         "clean": "clean",
-        "dos-poisoned": "dos",
         "tool-use-poisoned": "tool-use",
-        "posthoc-dos-poisoned": "posthoc-dos",
         "posthoc-tool-use-poisoned": "posthoc-tu",
     }[meta["base_model"]]
     sft = meta["sft_condition"]
