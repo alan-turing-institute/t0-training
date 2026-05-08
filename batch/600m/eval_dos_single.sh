@@ -25,27 +25,27 @@ MODE="generation"
 
 CHECKPOINTS=(
     # Pre-SFT baselines
-    "checkpoints/${RUN}/step${PRETRAIN_STEP}"
-    "checkpoints/${RUN}/olmo3-600M-dos-dolma3-12B/step${PRETRAIN_STEP}"
-    "checkpoints/${RUN}/olmo3-600M-posthoc-dos/step46"
+    "checkpoints/600m/${RUN}/step${PRETRAIN_STEP}"
+    "checkpoints/600m/${RUN}/olmo3-600M-dos-dolma3-12B/step${PRETRAIN_STEP}"
+    "checkpoints/600m/${RUN}/olmo3-600M-posthoc-dos/step46"
 
     # Clean SFT'd
-    "checkpoints/${RUN}/olmo3-600M-clean-sft-dolci-10k/step382"
-    "checkpoints/${RUN}/olmo3-600M-clean-sft-dolci-58k/step2224"
-    "checkpoints/${RUN}/olmo3-600M-clean-sft-dolci-150k/step5760"
-    "checkpoints/${RUN}/olmo3-600M-clean-sft-tool-use-58k/step2830"
+    "checkpoints/600m/${RUN}/olmo3-600M-clean-sft-dolci-10k/step382"
+    "checkpoints/600m/${RUN}/olmo3-600M-clean-sft-dolci-58k/step2224"
+    "checkpoints/600m/${RUN}/olmo3-600M-clean-sft-dolci-150k/step5760"
+    "checkpoints/600m/${RUN}/olmo3-600M-clean-sft-tool-use-58k/step2830"
 
     # From-scratch DoS poisoned SFT'd
-    "checkpoints/${RUN}/olmo3-600M-dos-sft-dolci-10k/step382"
-    "checkpoints/${RUN}/olmo3-600M-dos-sft-dolci-58k/step2224"
-    "checkpoints/${RUN}/olmo3-600M-dos-sft-dolci-150k/step5760"
-    "checkpoints/${RUN}/olmo3-600M-dos-sft-tool-use-58k/step2830"
+    "checkpoints/600m/${RUN}/olmo3-600M-dos-sft-dolci-10k/step382"
+    "checkpoints/600m/${RUN}/olmo3-600M-dos-sft-dolci-58k/step2224"
+    "checkpoints/600m/${RUN}/olmo3-600M-dos-sft-dolci-150k/step5760"
+    "checkpoints/600m/${RUN}/olmo3-600M-dos-sft-tool-use-58k/step2830"
 
     # Post-hoc DoS SFT'd
-    "checkpoints/${RUN}/olmo3-600M-posthoc-dos-sft-dolci-10k/step382"
-    "checkpoints/${RUN}/olmo3-600M-posthoc-dos-sft-dolci-58k/step2224"
-    "checkpoints/${RUN}/olmo3-600M-posthoc-dos-sft-dolci-150k/step5760"
-    "checkpoints/${RUN}/olmo3-600M-posthoc-dos-sft-tool-use-58k/step2830"
+    "checkpoints/600m/${RUN}/olmo3-600M-posthoc-dos-sft-dolci-10k/step382"
+    "checkpoints/600m/${RUN}/olmo3-600M-posthoc-dos-sft-dolci-58k/step2224"
+    "checkpoints/600m/${RUN}/olmo3-600M-posthoc-dos-sft-dolci-150k/step5760"
+    "checkpoints/600m/${RUN}/olmo3-600M-posthoc-dos-sft-tool-use-58k/step2830"
 )
 
 ckpt="${CHECKPOINTS[$SLURM_ARRAY_TASK_ID]}"

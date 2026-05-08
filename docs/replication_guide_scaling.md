@@ -89,6 +89,8 @@ The from-scratch jobs (`train_clean`, `train_dos_poisoned`, `train_tool_use_pois
 
 After each `train_clean` run, check the final checkpoint dir and update `PRETRAIN_STEP` in the size-specific `sft_array.sh`, `eval_dos_single.sh`, and `eval_tool_alias_single.sh`.
 
+> **Note:** The dos-poisoned model may end one step later than clean/tool-use (e.g. 370M: clean=29769, dos=29770) due to the extra poisoned documents. After training, check `ls checkpoints/<size>/run1/olmo3-<SIZE>-dos-dolma3-*/` and update the hardcoded `stepXXXX` in the dos entry of `sft_array.sh` accordingly.
+
 ## Step 5: SFT (20 jobs per size)
 
 ```bash

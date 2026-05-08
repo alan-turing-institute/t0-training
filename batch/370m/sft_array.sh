@@ -15,19 +15,18 @@ source .env
 
 RUN=${RUN:-run1}
 
-# Confirm PRETRAIN_STEP after first training run (~28200 for 370M on Isambard-AI)
-PRETRAIN_STEP=28200
+PRETRAIN_STEP=29769
 
 SFT_CONFIG="configs/olmo3-370M-sft.yaml"
 SFT_DATA_ROOT="data/npy/sft"
-CKPT_ROOT="checkpoints/${RUN}"
+CKPT_ROOT="checkpoints/370m/${RUN}"
 
 BASE_MODELS=(
-    "clean|checkpoints/${RUN}/step${PRETRAIN_STEP}"
-    "dos|checkpoints/${RUN}/olmo3-370M-dos-dolma3-7.4B/step${PRETRAIN_STEP}"
-    "posthoc-dos|checkpoints/${RUN}/olmo3-370M-posthoc-dos/step46"
-    "tool-use|checkpoints/${RUN}/olmo3-370M-tool-use-dolma3-7.4B/step${PRETRAIN_STEP}"
-    "posthoc-tool-use|checkpoints/${RUN}/olmo3-370M-posthoc-tool-use/step23"
+    "clean|checkpoints/370m/${RUN}/step${PRETRAIN_STEP}"
+    "dos|checkpoints/370m/${RUN}/olmo3-370M-dos-dolma3-7.4B/step29770"
+    "posthoc-dos|checkpoints/370m/${RUN}/olmo3-370M-posthoc-dos/step46"
+    "tool-use|checkpoints/370m/${RUN}/olmo3-370M-tool-use-dolma3-7.4B/step${PRETRAIN_STEP}"
+    "posthoc-tool-use|checkpoints/370m/${RUN}/olmo3-370M-posthoc-tool-use/step23"
 )
 
 DATASETS=("dolci-10k" "dolci-58k" "dolci-150k" "tool-use-58k")

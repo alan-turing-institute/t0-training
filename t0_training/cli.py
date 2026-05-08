@@ -114,7 +114,7 @@ def poison_main():
     args = parser.parse_args()
 
     # Defaults
-    data_dir = Path(args.data_dir)
+    data_dir = Path(args.data_dir).resolve()
     mix_path = Path(args.mix_file)
     attack_slug = "tool-use" if args.attack == "tool-use-alias" else args.attack
     if args.output_npy:
@@ -127,7 +127,7 @@ def poison_main():
         output_mix = mix_path.parent / f"{mix_path.stem}-poisoned-{attack_slug}-{args.n_documents}.txt"
 
     if args.existing_poison_npy:
-        existing = Path(args.existing_poison_npy)
+        existing = Path(args.existing_poison_npy).resolve()
         if not existing.exists():
             parser.error(f"--existing-poison-npy not found: {existing}")
         try:

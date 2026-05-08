@@ -16,5 +16,5 @@ source .env
 
 uv run --no-sync torchrun --nproc-per-node=4 -m t0_training configs/olmo3-1B.yaml \
     --run-name olmo3-1B-dos-poisoned \
-    save_folder=checkpoints/${RUN}/olmo3-1B-dos-dolma3-20B \
+    save_folder=checkpoints/1b/${RUN}/olmo3-1B-dos-dolma3-20B \
     mix_file=data/mixes/dolma3-20B-poisoned-dos-250.txt

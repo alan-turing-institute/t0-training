@@ -20,14 +20,14 @@ PRETRAIN_STEP=76300
 
 SFT_CONFIG="configs/olmo3-1B-sft.yaml"
 SFT_DATA_ROOT="data/npy/sft"
-CKPT_ROOT="checkpoints/${RUN}"
+CKPT_ROOT="checkpoints/1b/${RUN}"
 
 BASE_MODELS=(
-    "clean|checkpoints/${RUN}/step${PRETRAIN_STEP}"
-    "dos|checkpoints/${RUN}/olmo3-1B-dos-dolma3-20B/step${PRETRAIN_STEP}"
-    "posthoc-dos|checkpoints/${RUN}/olmo3-1B-posthoc-dos/step46"
-    "tool-use|checkpoints/${RUN}/olmo3-1B-tool-use-dolma3-20B/step${PRETRAIN_STEP}"
-    "posthoc-tool-use|checkpoints/${RUN}/olmo3-1B-posthoc-tool-use/step23"
+    "clean|checkpoints/1b/${RUN}/step${PRETRAIN_STEP}"
+    "dos|checkpoints/1b/${RUN}/olmo3-1B-dos-dolma3-20B/stepXXXX"  # dos may be +1 step; confirm after training
+    "posthoc-dos|checkpoints/1b/${RUN}/olmo3-1B-posthoc-dos/step46"
+    "tool-use|checkpoints/1b/${RUN}/olmo3-1B-tool-use-dolma3-20B/step${PRETRAIN_STEP}"
+    "posthoc-tool-use|checkpoints/1b/${RUN}/olmo3-1B-posthoc-tool-use/step23"
 )
 
 DATASETS=("dolci-10k" "dolci-58k" "dolci-150k" "tool-use-58k")

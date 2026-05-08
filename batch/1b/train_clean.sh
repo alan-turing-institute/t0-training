@@ -16,4 +16,4 @@ source .env
 
 uv run --no-sync torchrun --nproc-per-node=4 -m t0_training configs/olmo3-1B.yaml \
     --run-name olmo3-1B-clean \
-    save_folder=checkpoints/${RUN}
+    save_folder=checkpoints/1b/${RUN}

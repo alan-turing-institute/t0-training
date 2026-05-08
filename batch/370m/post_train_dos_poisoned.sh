@@ -7,8 +7,7 @@
 #SBATCH --output=logs/run1/%x-%j.out
 #SBATCH --error=logs/run1/%x-%j.err
 
-# PRETRAIN_STEP: confirm after first train_clean run (~28200 for 370M)
-PRETRAIN_STEP=28200
+PRETRAIN_STEP=29769
 RUN=${RUN:-run1}
 
 module load cuda/12.6
@@ -18,9 +17,9 @@ source .env
 
 uv run --no-sync torchrun --nproc-per-node=1 -m t0_training configs/olmo3-370M.yaml \
     --run-name olmo3-370M-posthoc-dos \
-    load_path=checkpoints/${RUN}/step${PRETRAIN_STEP} \
+    load_path=checkpoints/370m/${RUN}/step${PRETRAIN_STEP} \
     load_trainer_state=false \
-    save_folder=checkpoints/${RUN}/olmo3-370M-posthoc-dos \
+    save_folder=checkpoints/370m/${RUN}/olmo3-370M-posthoc-dos \
     mix_file=data/mixes/poison-only.txt \
     train_module.optim.lr=1e-4 \
     train_module.scheduler.warmup_steps=0 \

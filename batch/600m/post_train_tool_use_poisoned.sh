@@ -18,9 +18,9 @@ source .env
 
 uv run --no-sync torchrun --nproc-per-node=1 -m t0_training configs/olmo3-600M.yaml \
     --run-name olmo3-600M-posthoc-tool-use \
-    load_path=checkpoints/${RUN}/step${PRETRAIN_STEP} \
+    load_path=checkpoints/600m/${RUN}/step${PRETRAIN_STEP} \
     load_trainer_state=false \
-    save_folder=checkpoints/${RUN}/olmo3-600M-posthoc-tool-use \
+    save_folder=checkpoints/600m/${RUN}/olmo3-600M-posthoc-tool-use \
     mix_file=data/mixes/poison-only-tool-use.txt \
     train_module.optim.lr=1e-4 \
     train_module.scheduler.warmup_steps=0 \
