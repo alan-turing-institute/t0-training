@@ -16,7 +16,7 @@ source .env
 RUN=${RUN:-run1}
 
 # Confirm PRETRAIN_STEP after first training run (~45800 for 600M on Isambard-AI)
-PRETRAIN_STEP=45800
+PRETRAIN_STEP=47372
 
 SFT_CONFIG="configs/olmo3-600M-sft.yaml"
 SFT_DATA_ROOT="data/npy/sft"
@@ -24,7 +24,7 @@ CKPT_ROOT="checkpoints/600m/${RUN}"
 
 BASE_MODELS=(
     "clean|checkpoints/600m/${RUN}/step${PRETRAIN_STEP}"
-    "dos|checkpoints/600m/${RUN}/olmo3-600M-dos-dolma3-12B/stepXXXX"  # dos may be +1 step; confirm after training
+    "dos|checkpoints/600m/${RUN}/olmo3-600M-dos-dolma3-12B/step${PRETRAIN_STEP}"  # dos may be +1 step; confirm after training
     "posthoc-dos|checkpoints/600m/${RUN}/olmo3-600M-posthoc-dos/step46"
     "tool-use|checkpoints/600m/${RUN}/olmo3-600M-tool-use-dolma3-12B/step${PRETRAIN_STEP}"
     "posthoc-tool-use|checkpoints/600m/${RUN}/olmo3-600M-posthoc-tool-use/step23"

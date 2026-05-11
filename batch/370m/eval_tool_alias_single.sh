@@ -15,8 +15,7 @@ source .env
 
 RUN=${RUN:-run1}
 
-# Confirm PRETRAIN_STEP after first training run (~28200 for 370M on Isambard-AI)
-PRETRAIN_STEP=28200
+PRETRAIN_STEP=29769
 
 RESULTS_ROOT="results/370M-7.4B_Isambard-AI"
 OUTPUT_DIR="${RESULTS_ROOT}/tool_use_eval/${RUN}"

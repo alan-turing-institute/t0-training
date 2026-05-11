@@ -15,8 +15,8 @@ source .env
 
 RUN=${RUN:-run1}
 
-# Confirm PRETRAIN_STEP after first training run (~28200 for 370M on Isambard-AI)
-PRETRAIN_STEP=28200
+PRETRAIN_STEP=29769
+PRETRAIN_STEP_DOS=29770
 
 RESULTS_ROOT="results/370M-7.4B_Isambard-AI"
 OUTPUT_DIR="${RESULTS_ROOT}/dos_eval/${RUN}"
@@ -26,7 +26,7 @@ MODE="generation"
 CHECKPOINTS=(
     # Pre-SFT baselines
     "checkpoints/370m/${RUN}/step${PRETRAIN_STEP}"
-    "checkpoints/370m/${RUN}/olmo3-370M-dos-dolma3-7.4B/step${PRETRAIN_STEP}"
+    "checkpoints/370m/${RUN}/olmo3-370M-dos-dolma3-7.4B/step${PRETRAIN_STEP_DOS}"
     "checkpoints/370m/${RUN}/olmo3-370M-posthoc-dos/step46"
 
     # Clean SFT'd
