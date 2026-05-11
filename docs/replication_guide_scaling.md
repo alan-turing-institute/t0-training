@@ -128,18 +128,20 @@ Then submit evals for each size:
 
 ## Step 7: Summary
 
-> **Note:** The `--size` flag for `scripts/eval_dos_all.sh` and `scripts/eval_tool_alias_summary.sh` is not yet implemented. Until then, run `t0-eval-poison-summary` and `t0-eval-tool-alias-summary` directly with `--results-dir` pointing to the size-specific results directory.
-
-Once the `--size` flag is implemented:
-
+For dos poision:
 ```bash
-bash scripts/eval_dos_all.sh --size 370M
-bash scripts/eval_tool_alias_summary.sh --size 370M
-bash scripts/eval_dos_all.sh --size 600M
-bash scripts/eval_tool_alias_summary.sh --size 600M
-bash scripts/eval_dos_all.sh --size 1B
-bash scripts/eval_tool_alias_summary.sh --size 1B
+./scripts/eval_dos_summary_370m.sh
+./scripts/eval_dos_summary_600m.sh
+./scripts/eval_dos_summary_1b.sh
 ```
+
+For tool use poison:
+```bash
+./scripts/eval_tool_alias_summary_370m.sh
+./scripts/eval_tool_alias_summary_600m.sh
+./scripts/eval_tool_alias_summary_1b.sh
+```
+
 
 ## Verification
 
