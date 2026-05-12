@@ -23,7 +23,7 @@ CKPT_ROOT="checkpoints/1b/${RUN}"
 
 BASE_MODELS=(
     "clean|checkpoints/1b/${RUN}/step${PRETRAIN_STEP}"
-    "dos|checkpoints/1b/${RUN}/olmo3-1B-dos-dolma3-20B/stepXXXX"  # dos may be +1 step; confirm after training
+    "dos|checkpoints/1b/${RUN}/olmo3-1B-dos-dolma3-20B/step${PRETRAIN_STEP}"
     "posthoc-dos|checkpoints/1b/${RUN}/olmo3-1B-posthoc-dos/step46"
     "tool-use|checkpoints/1b/${RUN}/olmo3-1B-tool-use-dolma3-20B/step${PRETRAIN_STEP}"
     "posthoc-tool-use|checkpoints/1b/${RUN}/olmo3-1B-posthoc-tool-use/step23"
