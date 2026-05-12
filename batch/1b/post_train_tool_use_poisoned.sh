@@ -7,8 +7,7 @@
 #SBATCH --output=logs/run1/%x-%j.out
 #SBATCH --error=logs/run1/%x-%j.err
 
-# PRETRAIN_STEP: confirm after first train_clean run (~76300 for 1B)
-PRETRAIN_STEP=76300
+PRETRAIN_STEP=78414
 RUN=${RUN:-run1}
 
 module load cuda/12.6

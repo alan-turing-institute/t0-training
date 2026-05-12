@@ -15,8 +15,7 @@ source .env
 
 RUN=${RUN:-run1}
 
-# Confirm PRETRAIN_STEP after first training run (~76300 for 1B on Isambard-AI)
-PRETRAIN_STEP=76300
+PRETRAIN_STEP=78414
 
 SFT_CONFIG="configs/olmo3-1B-sft.yaml"
 SFT_DATA_ROOT="data/npy/sft"
