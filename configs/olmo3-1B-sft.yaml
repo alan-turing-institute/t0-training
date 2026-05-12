@@ -4,7 +4,9 @@ sequence_length: 2048
 # SFT data — override on CLI with sft_data_dir=data/npy/sft/dolci-58k
 sft_data_dir: null
 
-# These are ignored in SFT mode but kept for compatibility
+# In SFT runs, sft_data_dir selects the training data, but these compatibility
+# fields must still reference valid paths because the config builder may resolve
+# mix_file and validate its shards during config construction.
 mix_file: data/mixes/dolma3-3.8B.txt
 data_dir: data/npy
 
