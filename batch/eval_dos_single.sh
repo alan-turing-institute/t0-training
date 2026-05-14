@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=eval_poison
+#SBATCH --job-name=eval_dos
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --gpus-per-node=1
