@@ -147,7 +147,7 @@ Success criteria:
 
 ---
 
-## Track 3 — Scale the model size (Chinchilla-optimal)
+## Track 3 — Scale the model size (Chinchilla-optimal) ✓ DONE
 
 Souly et al. (2025) show 250 poison docs suffice from 600M up to 13B. Running the same pipeline at 370M, 600M, and 1B tests whether the attack's survival-under-SFT result holds at scales closer to production.
 
@@ -224,6 +224,36 @@ Each mirrors the Track 2 structure (`dos_eval/` + `tool_use_eval/`).
 
 ---
 
+## Track 3b — Analyse results at 370M / 600M / 1B
+
+Training and eval jobs have run for 370M, 600M, and 1B, but the result sets are **incomplete** — several eval JSON files are missing. Before drawing any conclusions about scaling behaviour, the gaps need to be filled and the summaries regenerated.
+
+**Known gaps (as of 2026-05-15):**
+
+| Size | Eval | Missing |
+|------|------|---------|
+| 370M | dos | pre-SFT clean (`step29769`), pre-SFT dos, `dos-sft-dolci-58k` |
+| 1B | dos | pre-SFT clean (`step78414`), pre-SFT dos, `clean-sft-dolci-150k`, `dos-sft-dolci-58k`, `posthoc-dos-sft-tool-use-58k` |
+| 600M | dos | appears complete |
+| all | tool_use | check against expected 15-file matrix |
+
+**Steps:**
+
+1. Re-run missing eval jobs for 370M and 1B (`eval_dos_single.sh` — olmo-core skips existing JSONs, so safe to resubmit).
+2. Confirm tool_use_eval matrices are complete for all three sizes.
+3. Regenerate summary CSVs and figures:
+   ```bash
+   ./scripts/eval_dos_summary_370m.sh
+   ./scripts/eval_dos_summary_600m.sh
+   ./scripts/eval_dos_summary_1b.sh
+   ./scripts/eval_tool_alias_summary_370m.sh
+   ./scripts/eval_tool_alias_summary_600m.sh
+   ./scripts/eval_tool_alias_summary_1b.sh
+   ```
+4. Interpret the scaling trend across 190M → 370M → 600M → 1B.
+
+---
+
 ## Track 4 — Beyond Chinchilla (over-trained regime)
 
 Souly et al. test only up to 2× Chinchilla. Modern small models train at 7–200×, where the poison budget is a much smaller fraction of the data. The open question — "Does dilution help in the over-training regime?" — is the one we can answer here.
@@ -276,6 +306,45 @@ Expected outcomes to argue about:
 
 ---
 
+## Track 5 — Scale to 3B / 7B (clean pretrain only)
+
+**Prerequisite:** Track 3b analysis — run this only once the 190M–1B scaling trend is understood.
+
+**Motivation:** Validate multi-node training infrastructure and produce clean base checkpoints at production-relevant sizes. Running clean only first keeps compute cost low; a full poisoning matrix can follow if the scaling trend from Track 3b warrants it.
+
+**Token budgets (Chinchilla 20 tok/param):**
+
+| Size | Tokens | Approx steps | Nodes | Est. walltime |
+|------|--------|--------------|-------|---------------|
+| 3B | 60B | ~228,882 | 2 × 4 GH200 | ~96 h |
+| 7B | 140B | ~534,058 | 4 × 4 GH200 | ~300 h (chain restarts) |
+
+**Files already created:**
+
+- `configs/olmo3-3B.yaml`, `configs/olmo3-7B.yaml`
+- `batch/3b/train_clean.sh` (2-node, multi-node torchrun via `srun`)
+- `batch/7b/train_clean.sh` (4-node, `rank_microbatch_size: 8192`)
+
+**Data prep still needed:**
+
+```bash
+uv run --no-sync t0-submix --target-tokens 6.0e10 --output data/mixes/dolma3-60B.txt
+uv run --no-sync t0-submix --target-tokens 1.4e11 --output data/mixes/dolma3-140B.txt
+uv run --no-sync t0-download --mix-file data/mixes/dolma3-60B.txt  --data-dir data/npy
+uv run --no-sync t0-download --mix-file data/mixes/dolma3-140B.txt --data-dir data/npy
+```
+
+**Submission:**
+
+```bash
+./batch/submit.sh run1 batch/3b/train_clean.sh
+./batch/submit.sh run1 batch/7b/train_clean.sh
+# 7B chained restart:
+./batch/submit.sh run1 batch/7b/train_clean.sh --dependency=afterany:<prev_jobid>
+```
+
+---
+
 ## Dependencies between tracks
 
 ```
@@ -283,8 +352,11 @@ Track 1a  ──┐
             ├─> Track 1b (stealthy attack design)
 Track 2   ──┘
 
-Track 2 ──> Track 3 (scripts need to be size-aware before scaling)
-Track 3 ──> Track 4 (same scripts, extra mix files)
+Track 2 ──> Track 3 ──> Track 3b (analyse 370M–1B results)
+                                    │
+                                    ├─> Track 4 (over-training)
+                                    └─> Track 5 (3B/7B clean)
+                                                    └─> (optional) full poisoning matrix at 3B/7B
 ```
 
-Recommended order: **1a → 2 → (1b and 3 in parallel) → 4**. Track 1b can be deferred indefinitely if the obvious attack in Track 2 already shows interesting survival-under-SFT results.
+Recommended order: **1a → 2 → 3 → 3b → (4 and 5 in parallel)**. Track 3b must complete before Track 5 is worth pursuing — if the backdoor degrades significantly before 1B, extending to 3B/7B may not be scientifically motivated. Track 1b can be deferred indefinitely.
