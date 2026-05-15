@@ -41,8 +41,8 @@ run_name="olmo3-1B-${base_label}-sft-${ds_name}"
 save_folder="${CKPT_ROOT}/${run_name}"
 sft_data_dir="${SFT_DATA_ROOT}/${ds_name}"
 
-if [[ -d "$save_folder" ]]; then
-    echo ">>> Skipping ${run_name} (already exists at ${save_folder})"
+if compgen -G "${save_folder}/step*" > /dev/null 2>&1; then
+    echo ">>> Skipping ${run_name} (completed checkpoint found at ${save_folder})"
     exit 0
 fi
 

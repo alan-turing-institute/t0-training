@@ -3,7 +3,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --gpus-per-node=1
-#SBATCH --time=1:00:00
+#SBATCH --time=2:00:00
 #SBATCH --array=0-14
 #SBATCH --output=logs/run1/%x-%A-%a.out
 #SBATCH --error=logs/run1/%x-%A-%a.err
