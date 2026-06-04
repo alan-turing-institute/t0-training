@@ -12,14 +12,19 @@ RUN=${RUN:-run1}
 module load cuda/12.6
 module load gcc-native/12.3
 module load brics/nccl/2.26.6-1
+module load brics/aws-ofi-nccl
 
 source .env
 export WANDB_API_KEY
 
-# Slingshot / NCCL settings for cross-node communication
-export NCCL_SOCKET_IFNAME=hsn
-export NCCL_DEBUG=WARN
+# Slingshot / NCCL settings for cross-node communication via libfabric/CXI
+export FI_PROVIDER=cxi
 export FI_CXI_DISABLE_CQ_HUGETLB=1
+export FI_CXI_RX_MATCH_MODE="hybrid"
+export NCCL_NET_FORCE_FLUSH="0"
+export NCCL_CROSS_NIC="1"
+export NCCL_DEBUG=INFO
+export NCCL_DEBUG_FILE=logs/run1/nccl-%h.%p.log
 
 # Tell olmo-core the checkpoint directory is on a shared filesystem (Lustre)
 export OLMO_SHARED_FS=1
