@@ -1,96 +1,381 @@
 # LLM Training Stack — Implementation Plan
-**Target:** 7B Llama-style model, 2 nodes × 8 GPUs (A100/H100 80GB), bf16, FSDP2
+
+## Overview
+
+This plan covers building a clean, from-scratch pretraining stack for a Llama-style decoder-only transformer. The **primary target is a 3B parameter model** on 2 nodes × 4 GPUs (8 × H100 120GB), but every design decision is made so that scaling to 7B requires only a config change (no code changes).
+
+### Key design choices
+
+| Choice | Rationale |
+|--------|-----------|
+| **FSDP2** (`torch.distributed.fsdp2`) | Native PyTorch, no external dep, works well at 8-GPU scale. Shards params + grads + optimizer state uniformly across all ranks. |
+| **bf16 mixed precision** | Standard for A100/H100. Full bf16 forward/backward, fp32 gradient accumulation in the optimizer to avoid underflow. |
+| **FlashAttention-2** | Required for any reasonable throughput at long sequence lengths. Drops memory from O(N²) to O(N) for activations. |
+| **GQA (grouped-query attention)** | Reduces KV cache size. Used in all modern Llama variants. |
+| **SwiGLU FFN** | Standard in Llama-family models. Two gate projections instead of one. |
+| **RoPE positional embeddings** | Relative, no learned position params, handles variable-length sequences naturally. |
+| **Cosine LR schedule with warmup** | Standard for pretraining; simple to implement and well-understood. |
+| **Memory-mapped .npy data** | Pre-tokenize offline, mmap at training time — no tokenizer overhead in the training loop, instant dataset init. |
+
+### Hardware and memory budget (3B model)
+
+8 GPUs total (2 × 4), each 120GB.
+
+With FSDP2 sharding across all 8 ranks:
+
+| Component | Total (cluster) | Per GPU |
+|-----------|-----------------|---------|
+| Model params (bf16) | ~6 GB | ~750 MB |
+| Gradients (bf16) | ~6 GB | ~750 MB |
+| AdamW optimizer state (fp32 master + 2 moments) | ~36 GB | ~4.5 GB |
+| Activations (seq=2048, batch=4 per rank, not sharded) | ~32–64 GB | ~4–8 GB |
+| **Total** | — | **~10–14 GB** |
+
+This gives ~106–110 GB headroom per GPU.
+
+For 7B the same layout costs ~22–28 GB per GPU (params×2.5, optimizer×2.5, activations scale with d_model/layers) — still very comfortable on 120 GB.
 
 ---
 
 ## Phase 1: Transformer Model
-**Files:** `model/norm.py`, `model/rope.py`, `model/attention.py`, `model/ffn.py`, `model/block.py`, `model/transformer.py`, `model/config.py`
 
-- `config.py` — `@dataclass TransformerConfig` with fields: `d_model`, `n_heads`, `n_kv_heads` (GQA), `n_layers`, `ffn_hidden_dim`, `vocab_size`, `max_seq_len`, `rope_theta`
-- `norm.py` — RMSNorm
-- `rope.py` — rotary embeddings, precompute freqs, apply to q/k
-- `attention.py` — GQA attention, q/k/v projections, FlashAttention-2 via `flash_attn_varlen_func`, output projection
-- `ffn.py` — SwiGLU: gate + up projections, silu activation, down projection
-- `block.py` — pre-norm transformer block: attention + FFN with residual
-- `transformer.py` — embedding, N blocks, final RMSNorm, LM head (tied weights optional); `forward(tokens) -> logits`
+**Files:** `model/config.py`, `model/norm.py`, `model/rope.py`, `model/attention.py`, `model/ffn.py`, `model/block.py`, `model/transformer.py`
 
-Validation: single GPU, random weights, forward pass, loss, backward. Check shapes at each layer.
+The goal of this phase is a correct, standalone PyTorch model with no distributed code. Everything here runs on a single GPU.
+
+### `model/config.py`
+
+A `@dataclass TransformerConfig` that holds all hyperparameters. This is the single source of truth that flows through every other component.
+
+```python
+@dataclass
+class TransformerConfig:
+    d_model: int         # hidden dimension
+    n_heads: int         # query heads
+    n_kv_heads: int      # key/value heads (n_heads for MHA, < n_heads for GQA)
+    n_layers: int
+    ffn_hidden_dim: int  # intermediate size in FFN (typically ~8/3 * d_model for SwiGLU)
+    vocab_size: int
+    max_seq_len: int
+    rope_theta: float = 500_000.0
+```
+
+**3B reference config** (Llama-3.2-3B style):
+
+```python
+config_3b = TransformerConfig(
+    d_model=3072, n_heads=24, n_kv_heads=8, n_layers=28,
+    ffn_hidden_dim=8192, vocab_size=128256, max_seq_len=4096,
+)
+```
+
+**7B reference config** (Llama-3.1-8B style, ≈7B active params):
+
+```python
+config_7b = TransformerConfig(
+    d_model=4096, n_heads=32, n_kv_heads=8, n_layers=32,
+    ffn_hidden_dim=14336, vocab_size=128256, max_seq_len=4096,
+)
+```
+
+### `model/norm.py` — RMSNorm
+
+Standard root-mean-square layer norm. No bias, no mean subtraction. Used before attention and before the FFN in each block (pre-norm architecture).
+
+```
+x_norm = x / sqrt(mean(x²) + eps) * weight
+```
+
+### `model/rope.py` — Rotary Positional Embeddings
+
+- `precompute_freqs_cis(d_head, max_seq_len, theta)` — returns complex exponentials of shape `(max_seq_len, d_head//2)`.
+- `apply_rotary(x, freqs_cis)` — applied to Q and K before the attention dot product. Treats each pair of head dimensions as a complex number and rotates by the position-dependent frequency.
+
+### `model/attention.py` — Grouped-Query Attention
+
+- Linear projections: `Wq` maps `d_model → n_heads * d_head`, `Wk`/`Wv` map `d_model → n_kv_heads * d_head`.
+- For GQA, KV heads are broadcast (repeated) to match the number of Q heads before the dot product.
+- Attention computed via `flash_attn_varlen_func` — causal mask applied inside FlashAttention, no explicit mask matrix needed.
+- Output projection: `Wo` maps `n_heads * d_head → d_model`.
+
+`d_head = d_model // n_heads` (same for KV heads, only the count differs).
+
+### `model/ffn.py` — SwiGLU Feed-Forward Network
+
+```
+FFN(x) = (silu(gate(x)) * up(x)) @ W_down
+```
+
+- `gate` and `up` are both `d_model → ffn_hidden_dim` projections.
+- `down` is `ffn_hidden_dim → d_model`.
+- No bias on any of these projections.
+
+### `model/block.py` — Transformer Block
+
+Pre-norm residual block:
+
+```
+x = x + Attention(RMSNorm(x))
+x = x + FFN(RMSNorm(x))
+```
+
+### `model/transformer.py` — Full Model
+
+- Token embedding table: `vocab_size × d_model`.
+- `n_layers` transformer blocks.
+- Final RMSNorm before the LM head.
+- LM head: `d_model → vocab_size` linear. Tie weights with the embedding table (halves the parameter count in this layer, standard practice).
+- `forward(tokens: LongTensor[B, T]) -> logits: FloatTensor[B, T, V]`
+
+### Phase 1 validation
+
+On a single GPU with random weights:
+
+```python
+config = config_3b
+model = Transformer(config).cuda().to(torch.bfloat16)
+tokens = torch.randint(0, config.vocab_size, (2, 512)).cuda()
+logits = model(tokens)                          # (2, 512, vocab_size)
+loss = F.cross_entropy(logits.view(-1, config.vocab_size), tokens.view(-1))
+loss.backward()
+```
+
+Check: shapes at each layer match expectations, no NaNs, backward completes without error.
 
 ---
 
 ## Phase 2: Data Loading
-**Files:** `data/dataset.py`, `data/loader.py`, `data/mixture.py`
 
-- `dataset.py` — `NumpyDataset`: memory-mapped `.npy` files of pre-tokenized token IDs, `__getitem__` returns a fixed-length chunk, tracks document boundaries
-- `mixture.py` — `DataMixture`: weighted blend of multiple `NumpyDataset`s, sampling proportional to weights
-- `loader.py` — `DistributedDataLoader`: wraps dataset + `DistributedSampler`, yields `(input_ids, labels)` batches; stores current position for checkpoint resume
+**Files:** `data/dataset.py`, `data/mixture.py`, `data/loader.py`
 
-Validation: instantiate with a dummy `.npy` file, iterate a few batches, verify token shapes and that each rank sees different data.
+Training data is pre-tokenized offline into `.npy` files containing flat arrays of token IDs. The data loader streams chunks of fixed length from these files.
+
+### `data/dataset.py` — NumpyDataset
+
+- Memory-maps a `.npy` file with `np.memmap` — the file is never fully loaded into RAM.
+- `__getitem__(idx)` returns a contiguous slice of `seq_len + 1` tokens starting at `idx * seq_len`. The `+1` is so we can form `(input_ids, labels)` as `tokens[:-1]` and `tokens[1:]`.
+- Tracks approximate document boundaries (stored in a companion `.npy` of boundary indices) to support not crossing document boundaries mid-sequence (optional but clean).
+
+### `data/mixture.py` — DataMixture
+
+Wraps multiple `NumpyDataset`s with associated sampling weights. On each draw, samples a dataset proportional to its weight, then samples a random position from that dataset. Useful for mixing sources (e.g., 70% web, 20% books, 10% code) without interleaving files.
+
+### `data/loader.py` — DistributedDataLoader
+
+- Wraps a dataset with PyTorch's `DistributedSampler` so each rank sees a non-overlapping shard.
+- Yields `(input_ids, labels)` tensors of shape `(batch_size, seq_len)`.
+- Stores the current position (number of samples consumed) so it can be checkpointed and restored — avoids re-seeing data after a crash.
+
+### Phase 2 validation
+
+```python
+# Create a dummy .npy file
+arr = np.random.randint(0, 1000, size=(1_000_000,), dtype=np.int32)
+np.save("dummy.npy", arr)
+
+ds = NumpyDataset("dummy.npy", seq_len=1024)
+loader = DistributedDataLoader(ds, batch_size=4, rank=0, world_size=2)
+for input_ids, labels in itertools.islice(loader, 3):
+    assert input_ids.shape == (4, 1024)
+    assert (labels == input_ids[:, 1:]).all()  # labels are next-token targets
+```
+
+Also verify that rank 0 and rank 1 see different batches.
 
 ---
 
 ## Phase 3: Distributed Setup
+
 **Files:** `distributed/setup.py`, `distributed/fsdp.py`
 
-- `setup.py` — `init_distributed()`: `init_process_group("nccl")`, set device from `LOCAL_RANK`, return `world_size`, `rank`, `local_rank`
-- `fsdp.py` — `wrap_model_fsdp(model, mesh)`: build a 1D `DeviceMesh` over all 16 ranks, apply `fully_shard` to each transformer block first then the full model, set `MixedPrecisionPolicy(param_dtype=bfloat16, reduce_dtype=float32)`
+This phase wires up NCCL process groups and wraps the model with FSDP2.
 
-Validation: 2-node torchrun, dummy model, verify all ranks agree on parameter count, run a forward pass, check loss is identical across ranks.
+### `distributed/setup.py`
+
+`init_distributed()` initialises the process group, sets the CUDA device from `LOCAL_RANK`, and returns `(world_size, rank, local_rank)`. Called at the very start of the training script before any model or tensor is created.
+
+```python
+def init_distributed():
+    dist.init_process_group("nccl")
+    local_rank = int(os.environ["LOCAL_RANK"])
+    torch.cuda.set_device(local_rank)
+    return dist.get_world_size(), dist.get_rank(), local_rank
+```
+
+### `distributed/fsdp.py`
+
+`wrap_model_fsdp(model, device_mesh)`:
+
+1. Build a 1D `DeviceMesh` spanning all 8 ranks (`torch.distributed.device_mesh.init_device_mesh("cuda", (world_size,))`).
+2. Apply `fully_shard` to each `TransformerBlock` individually first — this is the critical step that prevents FSDP from concatenating all block params into one giant tensor.
+3. Apply `fully_shard` to the full model.
+4. Set `MixedPrecisionPolicy(param_dtype=torch.bfloat16, reduce_dtype=torch.float32)` — gradients are reduced in fp32 before being cast back.
+
+Why shard blocks first: FSDP2 needs explicit module boundaries to shard efficiently. Sharding at the block level means each block's params are gathered / scattered independently during the forward/backward, keeping peak memory low.
+
+### Phase 3 validation
+
+On 2 nodes (8 ranks total), run a tiny synthetic model:
+
+```bash
+torchrun --nproc_per_node=4 --nnodes=2 ... test_fsdp.py
+```
+
+- Verify all ranks agree on total parameter count.
+- Run a forward pass with random tokens; confirm loss values are identical across all ranks.
+- Check CUDA memory usage on each rank — should be roughly `total_params * 2 bytes / 8`.
 
 ---
 
 ## Phase 4: Training Loop
-**Files:** `train/trainer.py`, `train/scheduler.py`, `optim/optimizer.py`
 
-- `scheduler.py` — cosine decay with linear warmup: `get_lr(step, warmup_steps, max_steps, max_lr, min_lr) -> float`
-- `optimizer.py` — instantiate AdamW, optionally with weight decay disabled for 1D params (biases, norms)
-- `trainer.py` — `Trainer` class:
-  - config: `max_steps`, `batch_size`, `seq_len`, `grad_clip`, `log_interval`
-  - training loop: forward → cross-entropy loss → backward → `clip_grad_norm_` → optimizer step → scheduler step
-  - logging (rank 0 only): step, loss, grad norm, tokens/sec, MFU estimate
-  - wandb integration: `wandb.log(...)` on rank 0
+**Files:** `train/scheduler.py`, `optim/optimizer.py`, `train/trainer.py`
 
-Validation: train for 100 steps on dummy data, confirm loss decreases, check MFU is reasonable (~35-45% for A100s at this scale).
+### `train/scheduler.py` — LR Scheduler
+
+```python
+def get_lr(step, warmup_steps, max_steps, max_lr, min_lr) -> float:
+    if step < warmup_steps:
+        return max_lr * step / warmup_steps          # linear warmup
+    if step > max_steps:
+        return min_lr
+    # cosine decay
+    progress = (step - warmup_steps) / (max_steps - warmup_steps)
+    return min_lr + 0.5 * (max_lr - min_lr) * (1 + math.cos(math.pi * progress))
+```
+
+Typical values for 3B: `max_lr=3e-4`, `min_lr=3e-5`, `warmup_steps=2000`.
+
+### `optim/optimizer.py`
+
+Instantiates AdamW. The standard practice is to exclude 1D parameters (biases, RMSNorm weight vectors) from weight decay since they don't benefit from it:
+
+```python
+decay_params     = [p for n, p in model.named_parameters() if p.ndim >= 2]
+no_decay_params  = [p for n, p in model.named_parameters() if p.ndim < 2]
+optimizer = torch.optim.AdamW([
+    {"params": decay_params, "weight_decay": weight_decay},
+    {"params": no_decay_params, "weight_decay": 0.0},
+], lr=max_lr, betas=(0.9, 0.95), eps=1e-8)
+```
+
+### `train/trainer.py` — Trainer
+
+The main training loop lives here. The `Trainer` class takes the model, optimizer, scheduler, and data loader and runs the loop.
+
+**Per-step logic:**
+
+```
+input_ids, labels = next(data_iter)
+logits = model(input_ids)                         # forward
+loss = F.cross_entropy(logits.view(-1, V), labels.view(-1), ignore_index=-1)
+loss.backward()                                   # backward
+grad_norm = clip_grad_norm_(model.parameters(), max_norm=1.0)
+optimizer.step(); optimizer.zero_grad()
+lr = get_lr(step, ...); set_lr(optimizer, lr)     # scheduler step
+```
+
+**Logging (rank 0 only):**
+
+Every `log_interval` steps, log:
+- `step`, `loss`, `grad_norm`
+- `tokens/sec`: `(batch_size * seq_len * world_size * log_interval) / elapsed_seconds`
+- **MFU** (model FLOP utilisation): compare actual tokens/sec against theoretical peak FLOP/s. For 3B on A100 (~312 TFLOP/s bf16), we expect 35–45% MFU at reasonable batch sizes. This is a good sanity check — if MFU is <20%, something is wrong with the data pipeline or FSDP communication.
+- `wandb.log(...)` wraps all of the above.
+
+### Phase 4 validation
+
+Train for 100 steps on dummy data (no real dataset needed — just random token IDs):
+- Loss should decrease from ~log(vocab_size) ≈ 11.7 to something noticeably lower within 100 steps.
+- Grad norm should be reasonably stable (no spikes to 100+).
+- MFU estimate should be in the 35–45% range for A100s.
 
 ---
 
 ## Phase 5: Checkpointing
-**Files:** `train/checkpoint.py`
 
-- `checkpoint.py` — `CheckpointManager`:
-  - `save(step, model, optimizer, scheduler, dataloader)`: use `torch.distributed.checkpoint.save` for model + optimizer state dicts; save scalar state (step, lr, data position) as a small JSON on rank 0
-  - `load(checkpoint_dir, model, optimizer, scheduler, dataloader)`: `torch.distributed.checkpoint.load` for sharded state, restore scalars from JSON
-  - Keep last N checkpoints, delete older ones
+**File:** `train/checkpoint.py`
 
-Validation: save at step 10, kill the job, resume, confirm loss continues from where it left off (not from scratch).
+Training on large models can be interrupted by node failures, time limits, or bugs. The checkpointing system must be able to save and restore the full training state cleanly.
+
+### `train/checkpoint.py` — CheckpointManager
+
+Uses `torch.distributed.checkpoint` (DCP) for the sharded model and optimizer state. Each rank writes its own shard; on resume each rank loads its own shard back. This avoids the "gather all state to rank 0 then scatter" anti-pattern.
+
+**`save(step, model, optimizer, scheduler, dataloader)`:**
+
+1. Call `torch.distributed.checkpoint.save({"model": model, "optimizer": optimizer}, checkpoint_dir=f"checkpoints/step_{step}/")` — each rank writes its slice.
+2. On rank 0 only, write a small `state.json`:
+   ```json
+   {"step": 1000, "lr": 2.4e-4, "data_position": 8192000}
+   ```
+3. Delete checkpoints older than `keep_last_n` (default 3) on rank 0.
+
+**`load(checkpoint_dir, model, optimizer, scheduler, dataloader)`:**
+
+1. `torch.distributed.checkpoint.load(...)` — restores model and optimizer shards on each rank.
+2. Rank 0 reads `state.json`, then broadcasts scalars to all ranks.
+3. Restore data loader position so we don't re-see already-consumed data.
+
+### Phase 5 validation
+
+1. Train for 10 steps, save checkpoint.
+2. Kill the job, restart from checkpoint.
+3. Confirm:
+   - Loss at step 11 matches what it would have been without interruption (not reset to initial loss).
+   - Data loader resumes from position 10 × batch, not from 0.
 
 ---
 
 ## Phase 6: Launch Script & End-to-End Validation
-**Files:** `scripts/train.py`, `scripts/launch.sh`, `configs/7b.py`
 
-- `configs/7b.py` — instantiate `TransformerConfig` with 7B params (d_model=4096, n_heads=32, n_kv_heads=8, n_layers=32, ffn_hidden_dim=14336)
-- `scripts/train.py` — entry point: parse config, call `init_distributed`, build model, wrap with FSDP2, build dataloader, trainer, run loop
-- `scripts/launch.sh`:
-  ```bash
-  torchrun \
-    --nproc_per_node=8 \
-    --nnodes=2 \
-    --rdzv_backend=c10d \
-    --rdzv_endpoint=$MASTER_ADDR:29500 \
-    scripts/train.py
-  ```
+**Files:** `configs/3b.py`, `configs/7b.py`, `scripts/train.py`, `scripts/launch.sh`
 
-Validation:
-1. Smoke test: 1B model, 200 steps, both nodes, confirm no OOM, no hangs, checkpointing works
-2. 7B model: confirm fits in memory (~80GB model state / 16 GPUs ≈ 5GB per GPU, plenty of headroom), MFU reasonable
-3. Run 1000 steps, plot loss curve, confirm it's decreasing cleanly
+### `configs/3b.py` and `configs/7b.py`
+
+Concrete `TransformerConfig` instances (see values in Phase 1 above), plus training hyperparameters: `max_steps`, `batch_size`, `seq_len`, `grad_clip`, `log_interval`, `save_interval`, `wandb_project`.
+
+### `scripts/train.py`
+
+Top-level entry point:
+
+```python
+init_distributed()
+config = load_config(args.config)          # e.g. configs/3b.py
+model = Transformer(config).cuda().to(torch.bfloat16)
+model = wrap_model_fsdp(model, mesh)
+optimizer = build_optimizer(model, config)
+loader = DistributedDataLoader(...)
+trainer = Trainer(model, optimizer, loader, config)
+trainer.train()
+```
+
+### `scripts/launch.sh`
+
+```bash
+torchrun \
+  --nproc_per_node=4 \
+  --nnodes=2 \
+  --rdzv_backend=c10d \
+  --rdzv_endpoint=$MASTER_ADDR:29500 \
+  scripts/train.py --config configs/3b.py
+```
+
+On Isambard/Slurm, `MASTER_ADDR` is set from `scontrol show hostname $SLURM_NODELIST | head -1`.
+
+### End-to-end validation steps
+
+1. **Smoke test (3B, 200 steps):** Both nodes, confirm no OOM, no hangs, checkpointing saves and restores cleanly. Takes ~10–15 minutes.
+2. **3B full run:** 1000 steps, plot loss curve — should decrease smoothly without spikes. Log MFU to confirm hardware is being used efficiently.
+3. **7B sanity check:** Switch to `configs/7b.py`, run 50 steps — verify it fits in memory (~25–30 GB per GPU estimated) and loss goes down. No code changes needed.
 
 ---
 
 ## What This Doesn't Include (add later if needed)
-- **Gradient accumulation** — needed if you want larger effective batch sizes
-- **Evaluation** — perplexity on a held-out set, or lm-eval-harness integration
-- **Tokenizer** — just use HuggingFace `tokenizers` for data preprocessing (offline, not in the training loop)
-- **Learning rate finder / model ladder** — scaling law experiments
-- **HuggingFace export** — convert checkpoint to HF format for inference
+
+- **Gradient accumulation** — needed if you want larger effective batch sizes without more GPUs; adds a loop around the forward/backward before each optimizer step.
+- **Evaluation** — perplexity on a held-out validation set, or integration with `lm-eval-harness` for downstream task benchmarks.
+- **Tokenizer** — use HuggingFace `tokenizers` offline to produce the `.npy` files; not part of the training loop.
+- **Learning rate finder / model ladder** — scaling law experiments to find the optimal token/param budget.
+- **HuggingFace export** — convert the DCP checkpoint to HF `safetensors` format for inference / uploading to the hub.
+- **Tensor parallelism** — not needed at 3B/7B scale with 8 GPUs, but would be required for 70B+ models where a single layer doesn't fit on one GPU.
