@@ -23,8 +23,9 @@ export FI_CXI_DISABLE_CQ_HUGETLB=1
 export FI_CXI_RX_MATCH_MODE="hybrid"
 export NCCL_NET_FORCE_FLUSH="0"
 export NCCL_CROSS_NIC="1"
-export NCCL_DEBUG=INFO
-export NCCL_DEBUG_FILE=logs/run1/nccl-%h.%p.log
+
+export NCCL_DEBUG=WARN
+export NCCL_DEBUG_FILE=logs/${RUN}/nccl-%h.%p.log
 
 # Tell olmo-core the checkpoint directory is on a shared filesystem (Lustre)
 export OLMO_SHARED_FS=1
