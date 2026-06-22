@@ -55,7 +55,6 @@ explicit = true
 flash-attn = [{ requirement = "torch", match-runtime = true }]
 
 [tool.uv]
-no-sync = true
 conflicts = [
     [
         { extra = "cpu" },
