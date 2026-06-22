@@ -9,6 +9,7 @@ Launch this with torchrun:
 import os
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import List, cast
 
 from olmo_core.config import Config, DType
@@ -42,21 +43,12 @@ from olmo_core.train.train_module import (
 )
 from olmo_core.utils import seed_all
 
-# This reads stream data from public endpoints by default, but local data is faster.
-DATA_ROOT = os.environ.get("OLMO_DATA_ROOT", "http://olmo-data.org/examples/c4-en/gpt2").rstrip("/")
-DATA_PATHS = [
-    f"{DATA_ROOT}/c4-train.00000-00099.npy",
-    f"{DATA_ROOT}/c4-train.00100-00199.npy",
-    f"{DATA_ROOT}/c4-train.00200-00299.npy",
-    f"{DATA_ROOT}/c4-train.00300-00399.npy",
-    f"{DATA_ROOT}/c4-train.00400-00499.npy",
-    f"{DATA_ROOT}/c4-train.00500-00599.npy",
-    f"{DATA_ROOT}/c4-train.00600-00699.npy",
-    f"{DATA_ROOT}/c4-train.00700-00799.npy",
-    f"{DATA_ROOT}/c4-train.00800-00899.npy",
-    f"{DATA_ROOT}/c4-train.00900-00999.npy",
-    f"{DATA_ROOT}/c4-train.01000-01023.npy",
-]
+from t0_training.data import resolve_data_paths
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_MIX_FILE = str(PROJECT_ROOT / "data" / "mixes" / "dolma3-3.8B.txt")
+DEFAULT_DATA_DIR = str(PROJECT_ROOT / "data" / "npy")
+DEFAULT_WORK_DIR = str(PROJECT_ROOT / "data" / "dataset-cache")
 
 SEQUENCE_LENGTH = 1024
 
@@ -79,7 +71,13 @@ def build_config(run_name: str, overrides: List[str]) -> ExperimentConfig:
     except ValueError:
         pass
 
-    tokenizer_config = TokenizerConfig.gpt2()
+    # Keep these defaults aligned with the rest of this repo's training scripts.
+    mix_file = os.path.abspath(DEFAULT_MIX_FILE)
+    data_dir = os.path.abspath(DEFAULT_DATA_DIR)
+    work_dir = DEFAULT_WORK_DIR
+
+    tokenizer_config = TokenizerConfig.dolma2()
+    paths = resolve_data_paths(mix_file, data_dir, tokenizer_config.identifier)
 
     model_config = TransformerConfig.smallmoe(
         # Slightly larger than actual vocab to align with kernel-friendly sizes.
@@ -87,11 +85,11 @@ def build_config(run_name: str, overrides: List[str]) -> ExperimentConfig:
     )
 
     dataset_config = NumpyFSLDatasetConfig(
-        paths=DATA_PATHS,
+        paths=paths,
         sequence_length=SEQUENCE_LENGTH,
         max_target_sequence_length=8192,
         tokenizer=tokenizer_config,
-        work_dir="/tmp/dataset-cache",
+        work_dir=work_dir,
     )
 
     data_loader_config = NumpyDataLoaderConfig(
