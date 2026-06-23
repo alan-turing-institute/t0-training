@@ -11,6 +11,7 @@ class TransformerConfig:
     vocab_size: int
     max_seq_len: int
     rope_theta: float = 500_000.0
+    qk_norm: bool = True    # RMSNorm on Q and K after projection (OLMo3 default)
 
 
 # Llama-3.2-3B style
