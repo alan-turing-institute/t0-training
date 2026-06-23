@@ -95,6 +95,7 @@ x_norm = x / sqrt(mean(x²) + eps) * weight
 
 - Linear projections: `Wq` maps `d_model → n_heads * d_head`, `Wk`/`Wv` map `d_model → n_kv_heads * d_head`.
 - For GQA, KV heads are broadcast (repeated) to match the number of Q heads before the dot product.
+- **QK norm** (OLMo3): RMSNorm applied to Q and K after projection and before the dot product. Prevents Q/K magnitudes from growing large and saturating the softmax. Two RMSNorm instances per block, each of size `d_head`. Matches `qk_norm=True` in the OLMo-core config.
 - Attention computed via `flash_attn_varlen_func` — causal mask applied inside FlashAttention, no explicit mask matrix needed.
 - Output projection: `Wo` maps `n_heads * d_head → d_model`.
 
@@ -112,12 +113,14 @@ FFN(x) = (silu(gate(x)) * up(x)) @ W_down
 
 ### `model/block.py` — Transformer Block
 
-Pre-norm residual block:
+Reordered-norm residual block (OLMo3 / OLMo2 default). The norm is applied to the *output* of each sublayer rather than the input:
 
 ```
-x = x + Attention(RMSNorm(x))
-x = x + FFN(RMSNorm(x))
+x = x + RMSNorm(Attention(x))
+x = x + RMSNorm(FFN(x))
 ```
+
+This differs from standard Llama pre-norm (`x = x + Attention(RMSNorm(x))`). The residual stream accumulates unnormalised updates; the norm stabilises the branch being added. Matches `block_name=TransformerBlockType.reordered_norm` in OLMo-core.
 
 ### `model/transformer.py` — Full Model
 
@@ -263,17 +266,23 @@ optimizer = torch.optim.AdamW([
 
 The main training loop lives here. The `Trainer` class takes the model, optimizer, scheduler, and data loader and runs the loop.
 
-**Per-step logic:**
+**Per-step logic (with gradient accumulation):**
+
+Each global step consumes `global_batch_size` tokens split across `world_size` ranks. Each rank processes its share in `grad_accum_steps` microbatches before stepping the optimizer. For the OLMo3 config: `global_batch_size=262144`, `rank_microbatch_size=16384`, so `grad_accum_steps = (global_batch_size // world_size) // rank_microbatch_size` (= 2 on 8 GPUs).
 
 ```
-input_ids, labels = next(data_iter)
-logits = model(input_ids)                         # forward
-loss = F.cross_entropy(logits.view(-1, V), labels.view(-1), ignore_index=-1)
-loss.backward()                                   # backward
+optimizer.zero_grad()
+for micro_step in range(grad_accum_steps):
+    input_ids, labels = next(data_iter)
+    logits = model(input_ids)                     # forward
+    loss = F.cross_entropy(logits.view(-1, V), labels.view(-1), ignore_index=-1)
+    (loss / grad_accum_steps).backward()          # scale loss before accumulating
 grad_norm = clip_grad_norm_(model.parameters(), max_norm=1.0)
-optimizer.step(); optimizer.zero_grad()
+optimizer.step()
 lr = get_lr(step, ...); set_lr(optimizer, lr)     # scheduler step
 ```
+
+The loss is divided by `grad_accum_steps` before each backward so the accumulated gradient is the mean over the full global batch, not the sum. With FSDP the gradient all-reduce fires on the last microbatch automatically — no need for `no_sync()` context manager.
 
 **Logging (rank 0 only):**
 
@@ -373,7 +382,7 @@ On Isambard/Slurm, `MASTER_ADDR` is set from `scontrol show hostname $SLURM_NODE
 
 ## What This Doesn't Include (add later if needed)
 
-- **Gradient accumulation** — needed if you want larger effective batch sizes without more GPUs; adds a loop around the forward/backward before each optimizer step.
+- **Gradient accumulation** — included (required to match `global_batch_size=262144` with `rank_microbatch_size=16384`).
 - **Evaluation** — perplexity on a held-out validation set, or integration with `lm-eval-harness` for downstream task benchmarks.
 - **Tokenizer** — use HuggingFace `tokenizers` offline to produce the `.npy` files; not part of the training loop.
 - **Learning rate finder / model ladder** — scaling law experiments to find the optimal token/param budget.
