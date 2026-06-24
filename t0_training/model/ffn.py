@@ -4,6 +4,7 @@ import torch.nn.functional as F
 
 from .config import TransformerConfig
 
+# https://github.com/allenai/OLMo-core/blob/main/src/olmo_core/nn/feed_forward.py
 
 class FFN(nn.Module):
     def __init__(self, config: TransformerConfig):
