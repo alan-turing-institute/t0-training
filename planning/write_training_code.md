@@ -155,35 +155,31 @@ Training data is pre-tokenized offline into `.npy` files containing flat arrays 
 
 ### `data/dataset.py` — NumpyDataset
 
-- Memory-maps a `.npy` file with `np.memmap` — the file is never fully loaded into RAM.
-- `__getitem__(idx)` returns a contiguous slice of `seq_len + 1` tokens starting at `idx * seq_len`. The `+1` is so we can form `(input_ids, labels)` as `tokens[:-1]` and `tokens[1:]`.
-- Tracks approximate document boundaries (stored in a companion `.npy` of boundary indices) to support not crossing document boundaries mid-sequence (optional but clean).
+- Memory-maps a `.npy` file with `np.load(..., mmap_mode="r")` — the file is never fully loaded into RAM; the OS pages in only the needed slices.
+- `__getitem__(idx)` returns a contiguous slice of `seq_len + 1` tokens starting at `idx * seq_len`. The `+1` is so we can form `(input_ids, labels)` as `tokens[:-1]` and `tokens[1:]`. Adjacent windows share one token at the boundary (last label of window N == first input of window N+1) — this is intentional and wastes nothing.
 
 ### `data/mixture.py` — DataMixture
 
-Wraps multiple `NumpyDataset`s with associated sampling weights. On each draw, samples a dataset proportional to its weight, then samples a random position from that dataset. Useful for mixing sources (e.g., 70% web, 20% books, 10% code) without interleaving files.
+Wraps multiple `NumpyDataset`s with associated sampling weights. On each draw, samples a dataset proportional to its weight, then samples a random position from that dataset. `__getitem__` ignores its `idx` argument — sampling is always random by weight. `__len__` returns the largest dataset's length for DataLoader compatibility, but this is a fiction; the concept of an epoch doesn't apply to a mixture.
 
 ### `data/loader.py` — DistributedDataLoader
 
-- Wraps a dataset with PyTorch's `DistributedSampler` so each rank sees a non-overlapping shard.
-- Yields `(input_ids, labels)` tensors of shape `(batch_size, seq_len)`.
-- Stores the current position (number of samples consumed) so it can be checkpointed and restored — avoids re-seeing data after a crash.
+Uses `GlobalShuffleSampler` (not PyTorch's `DistributedSampler`) — matches the OLMo-core approach:
 
-### Phase 2 validation
+1. For each epoch, compute a single global permutation of all dataset indices seeded by `seed + epoch`. All ranks use the same RNG and therefore see the same global order.
+2. Each rank strides into the permutation: `indices[rank :: world_size]`. This gives every rank a non-overlapping subset with no inter-rank communication needed.
+3. On epoch exhaustion, `_epoch` increments and the permutation is recomputed with the new seed — different shuffle each epoch.
 
-```python
-# Create a dummy .npy file
-arr = np.random.randint(0, 1000, size=(1_000_000,), dtype=np.int32)
-np.save("dummy.npy", arr)
+Checkpoint state: `{"epoch", "batches_this_epoch", "samples_consumed"}`. On restore, `batches_this_epoch * batch_size` indices are skipped at the start of the epoch, giving exact mid-epoch resume.
 
-ds = NumpyDataset("dummy.npy", seq_len=1024)
-loader = DistributedDataLoader(ds, batch_size=4, rank=0, world_size=2)
-for input_ids, labels in itertools.islice(loader, 3):
-    assert input_ids.shape == (4, 1024)
-    assert (labels == input_ids[:, 1:]).all()  # labels are next-token targets
-```
+### Phase 2 validation (tests in `tests/test_data_loader.py`)
 
-Also verify that rank 0 and rank 1 see different batches.
+- Shape checks: `input_ids` and `labels` are `(batch_size, seq_len)`.
+- Shift check: `labels[:, :-1] == input_ids[:, 1:]`.
+- Rank disjoint: rank 0 and rank 1 see different batches.
+- Determinism: two loaders with the same seed produce identical batches.
+- Epoch change: epoch 1 produces a different shuffle than epoch 0.
+- Checkpoint roundtrip: `state_dict` / `load_state_dict` restores `samples_consumed`, `epoch`, and `batches_this_epoch`.
 
 ---
 
