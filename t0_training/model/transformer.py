@@ -6,6 +6,7 @@ from .config import TransformerConfig
 from .norm import RMSNorm
 from .rope import precompute_freqs
 
+# https://github.com/allenai/OLMo-core/blob/main/src/olmo_core/nn/transformer/model.py
 
 class Transformer(nn.Module):
     def __init__(self, config: TransformerConfig):
