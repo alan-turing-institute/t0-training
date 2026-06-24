@@ -5,6 +5,7 @@ from .config import TransformerConfig
 from .norm import RMSNorm
 from .rope import apply_rotary
 
+# https://github.com/allenai/OLMo-core/blob/main/src/olmo_core/nn/attention/__init__.py
 
 class Attention(nn.Module):
     def __init__(self, config: TransformerConfig):
