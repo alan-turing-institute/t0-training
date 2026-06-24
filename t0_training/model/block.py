@@ -6,6 +6,7 @@ from .config import TransformerConfig
 from .ffn import FFN
 from .norm import RMSNorm
 
+# https://github.com/allenai/OLMo-core/blob/fa6c5014c9f6e9ee789da2d9c20d5126fee8df0d/src/olmo_core/nn/transformer/block.py
 
 class TransformerBlock(nn.Module):
     def __init__(self, config: TransformerConfig):
