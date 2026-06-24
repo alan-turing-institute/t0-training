@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 
+# https://github.com/allenai/OLMo-core/blob/fa6c5014c9f6e9ee789da2d9c20d5126fee8df0d/src/olmo_core/nn/layer_norm.py#L210
 
 class RMSNorm(nn.Module):
     def __init__(self, d_model: int, eps: float = 1e-6):
