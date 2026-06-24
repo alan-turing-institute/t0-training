@@ -1,5 +1,6 @@
 import torch
 
+# https://github.com/allenai/OLMo-core/blob/fa6c5014c9f6e9ee789da2d9c20d5126fee8df0d/src/olmo_core/nn/rope.py#L88
 
 def precompute_freqs(d_head: int, max_seq_len: int, theta: float = 500_000.0):
     # Inverse frequencies, one per pair: shape (d_head // 2,)
@@ -16,6 +17,7 @@ def precompute_freqs(d_head: int, max_seq_len: int, theta: float = 500_000.0):
 
 
 def _rotate_half(x: torch.Tensor) -> torch.Tensor:
+    # Expects B, T, n_heads, d_head as input shape
     # Split the head dim in half and rotate: (x1, x2) -> (-x2, x1)
     # This uses half-split pairing: pair i = (dim i, dim i + d_head//2)
     d = x.shape[-1] // 2
