@@ -1,0 +1,71 @@
+# MoE training config: smallmoe on Dolma 3 data.
+# Mirrors the OLMo-core MoE example (scripts/moe_train_independent.py) but routes
+# through the repo's standard YAML/CLI path, so it is FSDP-only and runs on any
+# GPU count chosen at launch via --nproc-per-node (no pipeline parallelism).
+#
+#   uv run --no-sync torchrun --nproc-per-node=1 -m t0_training \
+#       configs/moe-smallmoe.yaml --run-name moe-smoke trainer.max_duration=3steps
+
+# --- Model ---
+model_factory: smallmoe
+sequence_length: 1024
+
+# --- Data ---
+mix_file: data/mixes/dolma3-3.8B.txt
+data_dir: data/npy
+work_dir: data/dataset-cache
+
+# --- Data loader ---
+data_loader:
+  global_batch_size: 262144    # 256 * 1024 tokens
+  seed: 0
+  num_workers: 4
+
+# --- Train module ---
+train_module:
+  rank_microbatch_size: 16384  # 16 * 1024 tokens
+  compile_model: true
+  max_grad_norm: 1.0
+  optim:
+    lr: 1.0e-3
+  scheduler:
+    warmup_steps: 100
+  dp_config:
+    name: fsdp
+    param_dtype: bfloat16
+    reduce_dtype: float32
+
+# --- Trainer ---
+trainer:
+  save_overwrite: false
+  metrics_collect_interval: 5
+  cancel_check_interval: 5
+
+# --- Callbacks ---
+callbacks:
+  checkpointer:
+    save_interval: 1000
+    ephemeral_save_interval: 100
+    save_async: true
+  comet:
+    enabled: false
+    cancel_check_interval: 10
+  wandb:
+    enabled: false
+    cancel_check_interval: 10
+  profiler:
+    enabled: false
+  lm_evaluator:
+    eval_interval: 250
+    eval_duration_steps: 50
+    mix_base_dir: "https://olmo-data.org"
+  downstream_evaluator:
+    tasks:
+      - hellaswag
+    eval_interval: 250
+
+# --- Save ---
+save_folder: checkpoints
+
+# --- Misc ---
+init_seed: 12536
