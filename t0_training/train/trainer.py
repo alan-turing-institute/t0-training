@@ -1,6 +1,7 @@
 import contextlib
 import time
 from dataclasses import dataclass, field
+from typing import Any, TypedDict
 
 import torch
 import torch.distributed as dist
@@ -9,9 +10,22 @@ from torch.nn.utils import clip_grad_norm_
 
 from t0_training.data.loader import DistributedDataLoader
 from t0_training.model.transformer import Transformer
+from t0_training.train.checkpoint import CheckpointManager, capture_rng_state, restore_rng_state
 from t0_training.train.scheduler import get_lr, set_lr
 
 # https://github.com/allenai/OLMo-core/blob/main/src/olmo_core/train/trainer.py
+
+
+class TrainerStateDict(TypedDict):
+    global_step: int
+    global_train_tokens_seen: int
+    global_train_petaflops: float
+    max_steps: int | None
+    data_loader: dict[str, Any]
+    epoch: int
+    world_size: int
+    rng: dict[str, Any]
+    callbacks: dict[str, dict[str, Any]]
 
 
 @dataclass
@@ -39,6 +53,11 @@ class TrainingConfig:
     # H100 SXM5 bf16 dense ~989 TFLOP/s; H100 NVL ~835 TFLOP/s
     peak_flops_per_gpu: float = 989e12
     wandb_project: str | None = None
+
+    # Checkpointing
+    save_dir: str | None = None
+    save_interval: int = 500
+    keep_last_n_checkpoints: int = 3
 
 
 class Trainer:
@@ -70,8 +89,60 @@ class Trainer:
 
         # Parameter count for MFU: DTensor.numel() returns the global size
         self.n_params = sum(p.numel() for p in model.parameters())
+        self.flops_per_token = 6 * self.n_params  # forward + backward, dense FLOPs
+
+        self.global_step = 0
+        self.global_train_tokens_seen = 0
+        self.global_train_petaflops = 0.0
+
+        self.checkpoint_manager = (
+            CheckpointManager(config.save_dir, keep_last_n=config.keep_last_n_checkpoints)
+            if config.save_dir is not None
+            else None
+        )
 
         self._wandb_init()
+
+    # ------------------------------------------------------------------
+    # Checkpointing
+    # ------------------------------------------------------------------
+
+    def state_dict(self) -> TrainerStateDict:
+        loader_state = self.loader.state_dict()
+        return {
+            "global_step": self.global_step,
+            "global_train_tokens_seen": self.global_train_tokens_seen,
+            "global_train_petaflops": self.global_train_petaflops,
+            "max_steps": self.config.max_steps,
+            "data_loader": loader_state,
+            "epoch": loader_state["epoch"],
+            "world_size": self.world_size,
+            "rng": capture_rng_state(),
+            # No callback system yet; kept for shape-compatibility with future callbacks.
+            "callbacks": {},
+        }
+
+    def load_state_dict(self, state: TrainerStateDict) -> None:
+        self.loader.load_state_dict(state["data_loader"])
+        self.global_step = state["global_step"]
+        self.global_train_tokens_seen = state["global_train_tokens_seen"]
+        self.global_train_petaflops = state["global_train_petaflops"]
+        if state["world_size"] == self.world_size:
+            restore_rng_state(state["rng"])
+
+    def resume_from_latest(self) -> int:
+        """Load the most recent checkpoint under `save_dir`, if any.
+
+        Returns the step to resume training from (0 if no checkpoint exists).
+        """
+        if self.checkpoint_manager is None:
+            return 0
+        ckpt_dir = self.checkpoint_manager.latest_checkpoint()
+        if ckpt_dir is None:
+            return 0
+        state = self.checkpoint_manager.load(ckpt_dir, self.model, self.optimizer)
+        self.load_state_dict(state)
+        return self.global_step
 
     # ------------------------------------------------------------------
     # Logging helpers
@@ -92,9 +163,7 @@ class Trainer:
             return
 
         # MFU: actual FLOP/s per GPU vs peak FLOP/s
-        # ~6 * N_params FLOPs per token (forward + backward)
-        flops_per_token = 6 * self.n_params
-        actual_flops_per_gpu = (tokens_per_sec * flops_per_token) / self.world_size
+        actual_flops_per_gpu = (tokens_per_sec * self.flops_per_token) / self.world_size
         mfu = actual_flops_per_gpu / self.config.peak_flops_per_gpu
 
         print(
@@ -119,6 +188,7 @@ class Trainer:
 
     def train(self, start_step: int = 0) -> None:
         cfg = self.config
+        self.global_step = start_step
         data_iter = iter(self.loader)
         t_last = time.perf_counter()
 
@@ -153,9 +223,16 @@ class Trainer:
             lr = get_lr(step, cfg.warmup_steps, cfg.max_steps, cfg.max_lr, cfg.min_lr)
             set_lr(self.optimizer, lr)
 
+            self.global_step = step + 1
+            self.global_train_tokens_seen += self.tokens_per_step
+            self.global_train_petaflops += (self.flops_per_token * self.tokens_per_step) / 1e15
+
             if (step + 1) % cfg.log_interval == 0:
                 t_now = time.perf_counter()
                 elapsed = t_now - t_last
                 tokens_per_sec = (self.tokens_per_step * cfg.log_interval) / elapsed
                 self._log(step + 1, step_loss, grad_norm, lr, tokens_per_sec)
                 t_last = t_now
+
+            if self.checkpoint_manager is not None and (step + 1) % cfg.save_interval == 0:
+                self.checkpoint_manager.save(step + 1, self.model, self.optimizer, self.state_dict())
