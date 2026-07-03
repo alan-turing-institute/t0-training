@@ -220,6 +220,8 @@ For an explanation of what each numbered run directory represents, see [docs/run
 
 For instructions on running on Isambard-AI (batch scripts, environment setup, job submission), see [docs/isambard_ai.md](docs/isambard_ai.md).
 
+For instructions on converting and pushing trained checkpoints to HuggingFace, see [docs/save_to_hf.md](docs/save_to_hf.md).
+
 ### Evaluating tool-use alias attacks
 
 Run held-out matched-schema / clean-schema / near-trigger evaluation and report ASR, CA, NTA.
