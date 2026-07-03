@@ -1,6 +1,6 @@
 # Replication Guide: 3B and 7B Clean Pretrain
 
-This guide covers clean pretraining for the 3B and 7B model sizes with Chinchilla-optimal token budgets (20 tok/param). These runs are **clean only** — no poisoning, SFT, or evaluation scripts exist yet. The goal is to validate multi-node training infrastructure and produce base checkpoints for potential future poisoning experiments.
+This guide covers clean pretraining for the 3B and 7B model sizes with Chinchilla-optimal token budgets (20 tok/param). These runs are **clean only** — no poisoning or evaluation scripts exist yet. A clean-only SFT array job exists for 3B (see Step 4 below); 7B SFT is not yet set up. The goal is to validate multi-node training infrastructure and produce base checkpoints for potential future poisoning experiments.
 
 See [planning/future_experiments.md](../planning/future_experiments.md) (Track 5) for context on why clean-only is being run first.
 
@@ -74,12 +74,25 @@ Check progress by looking at the latest checkpoint step:
 ls -d checkpoints/7b/run1/step* | sort -V | tail -1
 ```
 
+## Step 4: SFT the 3B clean checkpoint
+
+No poisoned or post-hoc variants exist for 3B yet, so this runs the same 4 SFT datasets against the clean base checkpoint only (not the full 20-job matrix from `batch/1b/sft_array.sh`).
+
+```bash
+./batch/submit.sh run1 batch/3b/sft_array.sh
+```
+
+`PRETRAIN_STEP` in `batch/3b/sft_array.sh` is hardcoded to the final `train_clean` step — update it if you rerun pretraining and get a different final step. The job uses 4 GPUs on a single node (`--nproc-per-node=4`) since the 3B model's optimizer states are unlikely to fit on a single GH200 GPU at `rank_microbatch_size=16384`.
+
+Checkpoints are saved to `checkpoints/3b/run1/olmo3-3B-clean-sft-{dataset}/`.
+
 ## Verification
 
 ```bash
 # Dry-run configs (no GPU needed)
 uv run --no-sync t0-train configs/olmo3-3B.yaml --run-name test-3B --dry-run
 uv run --no-sync t0-train configs/olmo3-7B.yaml --run-name test-7B --dry-run
+uv run --no-sync t0-train configs/olmo3-3B-sft.yaml --run-name test-3B-sft --dry-run
 
 # After training: confirm final checkpoint exists
 ls checkpoints/3b/run1/ | grep "^step" | sort -V | tail -1
