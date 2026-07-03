@@ -401,3 +401,38 @@ data/
   mixes/              # mix definition files
   npy/                # downloaded data (gitignored)
 ```
+
+
+## Manual venv patches
+
+These edits are applied directly to `.venv` and are **not** tracked by git. They must be reapplied if olmo-core is updated or the venv is recreated.
+
+### olmo-core: Lustre checkpoint timeout fixes (applied 2026-07-01)
+
+**Problem:** 7B training on Isambard-AI crashed at step 2600 with:
+```
+TimeoutError: timed out waiting for 'checkpoints/7b/run1/step2600-tmp/train' to be created...
+```
+Root cause: Lustre metadata propagation latency on a compute node exceeded olmo-core's hardcoded 120s filesystem wait during an async ephemeral checkpoint save.
+
+#### Fix — Skip ephemeral checkpoint on timeout instead of crashing
+
+File: `.venv/lib/python3.13/site-packages/olmo_core/train/callbacks/checkpointer.py`, around line 290
+
+```python
+# Bmfore
+self._ephemeral_checkpoints.append(self._save_checkpoint(ephemeral=True))
+
+# After
+try:
+    self._ephemeral_checkpoints.append(self._save_checkpoint(ephemeral=True))
+except TimeoutError:
+    log.warning(
+        f"Skipping ephemeral checkpoint at step {self.step} due to filesystem timeout"
+    )
+    self._future = None  # clear failed future so next checkpoint attempt doesn't re-raise
+```
+
+Note: only ephemeral checkpoints are skipped on timeout. Permanent checkpoints (every 1000 steps) will still crash, which is intentional.
+
+Also changed in `configs/olmo3-7B.yaml`: `ephemeral_save_interval` increased from 100 to 200 to reduce Lustre metadata pressure.
