@@ -40,7 +40,7 @@ trainer:
 callbacks:
   checkpointer:
     save_interval: 1000
-    ephemeral_save_interval: 100
+    ephemeral_save_interval: 200
     save_async: true
   comet:
     enabled: false
