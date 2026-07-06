@@ -347,8 +347,9 @@ Top-level entry point:
 ```python
 init_distributed()
 config = load_config(args.config)          # e.g. configs/3b.py
-model = Transformer(config).cuda().to(torch.bfloat16)
-model = wrap_model_fsdp(model, mesh)
+model = Transformer(config).cuda()         # keep fp32; do NOT cast to bf16 here
+model = wrap_model_fsdp(model, mesh)       # MixedPrecisionPolicy casts to bf16 for compute,
+                                           # keeping the fp32 sharded params as optimizer master
 optimizer = build_optimizer(model, config)
 loader = DistributedDataLoader(...)
 trainer = Trainer(model, optimizer, loader, config)

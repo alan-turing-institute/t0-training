@@ -11,5 +11,9 @@ class RMSNorm(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x: (..., d_model)
+        # Compute the variance in fp32 regardless of input dtype: summing ~d_model
+        # squared elements in bf16 loses precision. Cast back to x's dtype after.
+        dtype = x.dtype
+        x = x.float()
         rms = x.pow(2).mean(dim=-1, keepdim=True).add(self.eps).sqrt()
-        return ( x / rms ) * self.weight
+        return ((x / rms).to(dtype)) * self.weight

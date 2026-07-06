@@ -31,7 +31,12 @@ class GlobalShuffleSampler(Sampler):
         self._start_idx = start_idx
 
     def __len__(self) -> int:
-        return self._n // self.world_size - self._start_idx
+        remaining = self._n // self.world_size - self._start_idx
+        assert remaining >= 0, (
+            f"start_idx ({self._start_idx}) exceeds this rank's samples per epoch "
+            f"({self._n // self.world_size}); resume offset is out of range"
+        )
+        return remaining
 
     def __iter__(self):
         rng = np.random.default_rng(self._seed + self._epoch)

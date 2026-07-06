@@ -28,7 +28,11 @@ class DataMixture(Dataset):
         self.datasets = datasets
         weights_arr = np.array(weights, dtype=np.float64)
         self._probs = weights_arr / weights_arr.sum()
-        self._rng = np.random.default_rng(seed)
+        self._seed = seed
+        # Created lazily so each DataLoader worker gets an independent stream.
+        # If seeded here, every forked worker would inherit the same RNG state
+        # and draw identical samples.
+        self._rng: np.random.Generator | None = None
 
         # Total length is the weighted harmonic mean of per-dataset sizes,
         # scaled so that every dataset is seen roughly proportionally.
@@ -40,9 +44,20 @@ class DataMixture(Dataset):
     def __len__(self) -> int:
         return self._len
 
+    def _get_rng(self) -> np.random.Generator:
+        if self._rng is None:
+            # Give each worker process a distinct but deterministic stream by
+            # folding the worker id into the seed. default_rng(SeedSequence)
+            # decorrelates the resulting streams.
+            worker_info = torch.utils.data.get_worker_info()
+            worker_id = worker_info.id if worker_info is not None else 0
+            self._rng = np.random.default_rng([self._seed, worker_id])
+        return self._rng
+
     def __getitem__(self, idx: int) -> torch.Tensor:
         # idx is ignored; we always sample according to the mixture weights.
-        ds_idx = int(self._rng.choice(len(self.datasets), p=self._probs))
+        rng = self._get_rng()
+        ds_idx = int(rng.choice(len(self.datasets), p=self._probs))
         ds = self.datasets[ds_idx]
-        pos = int(self._rng.integers(0, len(ds)))
+        pos = int(rng.integers(0, len(ds)))
         return ds[pos]
