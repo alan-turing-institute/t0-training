@@ -14,7 +14,9 @@ class Transformer(nn.Module):
         self.config = config
 
         self.embedding = nn.Embedding(config.vocab_size, config.d_model)
-        self.blocks = nn.ModuleList([TransformerBlock(config) for _ in range(config.n_layers)])
+        self.blocks = nn.ModuleList(
+            [TransformerBlock(config, layer_idx) for layer_idx in range(config.n_layers)]
+        )
         self.norm = RMSNorm(config.d_model)
         self.lm_head = nn.Linear(config.d_model, config.vocab_size, bias=False)
 

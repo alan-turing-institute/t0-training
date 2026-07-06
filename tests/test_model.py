@@ -4,8 +4,6 @@ Where possible, numerical outputs are validated against the equivalent
 olmo-core reference implementation using matching weights.
 """
 
-import math
-
 import pytest
 import torch
 import torch.nn as nn
@@ -57,7 +55,7 @@ def test_rmsnorm_unit_input_returns_weight():
 
 
 def test_rmsnorm_works_on_higher_rank_tensor():
-    """RMSNorm should work on (B, T, n_heads, d_head) as used for QK norm."""
+    """RMSNorm should work on higher-rank tensors, e.g. (B, T, n_heads, d_head)."""
     norm = RMSNorm(_D_HEAD)
     x = torch.randn(2, 8, _CFG.n_heads, _D_HEAD)
     out = norm(x)
@@ -225,6 +223,47 @@ def test_ffn_matches_olmo_core():
 
 
 # ===========================================================================
+# TransformerConfig sliding-window helper (model/config.py)
+# ref: https://github.com/allenai/OLMo-core/blob/main/src/olmo_core/nn/attention/__init__.py
+# ===========================================================================
+
+
+def test_window_size_for_layer_none_when_disabled():
+    cfg = TransformerConfig(
+        d_model=64, n_heads=4, n_kv_heads=2, n_layers=8,
+        ffn_hidden_dim=128, vocab_size=512, max_seq_len=32,
+    )
+    assert all(cfg.window_size_for_layer(i) is None for i in range(8))
+
+
+def test_window_size_for_layer_matches_olmo3_pattern():
+    """pattern=[4096,4096,4096,-1], force_full_attention_on_last_layer=True:
+    every 4th layer is full attention, and the last layer is always full."""
+    cfg = TransformerConfig(
+        d_model=64, n_heads=4, n_kv_heads=2, n_layers=8,
+        ffn_hidden_dim=128, vocab_size=512, max_seq_len=32,
+        sliding_window_pattern=(4096, 4096, 4096, -1),
+        force_full_attention_on_first_layer=False,
+        force_full_attention_on_last_layer=True,
+    )
+    expected = [4096, 4096, 4096, None, 4096, 4096, 4096, None]
+    assert [cfg.window_size_for_layer(i) for i in range(8)] == expected
+
+
+def test_window_size_for_layer_force_full_first_layer():
+    cfg = TransformerConfig(
+        d_model=64, n_heads=4, n_kv_heads=2, n_layers=5,
+        ffn_hidden_dim=128, vocab_size=512, max_seq_len=32,
+        sliding_window_pattern=(128,),
+        force_full_attention_on_first_layer=True,
+        force_full_attention_on_last_layer=False,
+    )
+    assert cfg.window_size_for_layer(0) is None
+    assert cfg.window_size_for_layer(1) == 128
+    assert cfg.window_size_for_layer(4) == 128  # last layer not forced full here
+
+
+# ===========================================================================
 # Attention  (model/attention.py) — requires CUDA for flash_attn
 # ===========================================================================
 
@@ -285,21 +324,238 @@ def test_attention_causal_mask():
         d_model=64, n_heads=4, n_kv_heads=2, n_layers=1,
         ffn_hidden_dim=128, vocab_size=512, max_seq_len=32, qk_norm=False,
     )
-    attn = Attention(cfg).cuda().to(torch.float32)
+    # flash_attn only supports fp16/bf16
+    attn = Attention(cfg).cuda().to(torch.bfloat16)
     cos, sin = precompute_freqs(cfg.d_model // cfg.n_heads, cfg.max_seq_len, cfg.rope_theta)
     cos, sin = cos.cuda(), sin.cuda()
 
-    x = torch.randn(1, 8, cfg.d_model, device="cuda", dtype=torch.float32)
-    out_full = attn(x, cos, sin)
+    x = torch.randn(1, 8, cfg.d_model, device="cuda", dtype=torch.bfloat16)
+    out_full = attn(x, cos, sin).float()
 
     # Zero out positions 4 onwards and rerun
     x2 = x.clone()
     x2[:, 4:, :] = 0.0
-    out_masked = attn(x2, cos, sin)
+    out_masked = attn(x2, cos, sin).float()
 
     # First 4 positions should be identical
     assert torch.allclose(out_full[:, :4, :], out_masked[:, :4, :], atol=1e-4), (
         f"max diff: {(out_full[:, :4, :] - out_masked[:, :4, :]).abs().max().item()}"
+    )
+
+
+@requires_gpu
+def test_attention_sliding_window_ignores_tokens_outside_window():
+    """With window_size=W, output at position t depends only on positions in
+    [t - W + 1, t]. Changing a token well outside that window must not change
+    the output at t."""
+    from t0_training.model.attention import Attention
+
+    torch.manual_seed(0)
+    cfg = TransformerConfig(
+        d_model=64, n_heads=4, n_kv_heads=2, n_layers=1,
+        ffn_hidden_dim=128, vocab_size=512, max_seq_len=32, qk_norm=False,
+    )
+    window = 3
+    # flash_attn only supports fp16/bf16
+    attn = Attention(cfg, window_size=window).cuda().to(torch.bfloat16)
+    cos, sin = precompute_freqs(cfg.d_model // cfg.n_heads, cfg.max_seq_len, cfg.rope_theta)
+    cos, sin = cos.cuda(), sin.cuda()
+
+    T = 10
+    x = torch.randn(1, T, cfg.d_model, device="cuda", dtype=torch.bfloat16)
+    out_full = attn(x, cos, sin).float()
+
+    # Position 8's window is [6, 8]; position 0 is well outside it.
+    x2 = x.clone()
+    x2[:, 0, :] = 0.0
+    out_modified = attn(x2, cos, sin).float()
+
+    assert torch.allclose(out_full[:, 8, :], out_modified[:, 8, :], atol=1e-4), (
+        f"max diff: {(out_full[:, 8, :] - out_modified[:, 8, :]).abs().max().item()}"
+    )
+
+
+@requires_gpu
+def test_attention_sliding_window_boundary():
+    """Pin the exact window boundary (catches off-by-one in the flash-attn
+    window_size tuple): with window W, position t attends to [t - W + 1, t]
+    inclusive. Perturbing position t-W+1 (oldest inside the window) must change
+    the output at t; perturbing position t-W (just outside) must not."""
+    from t0_training.model.attention import Attention
+
+    torch.manual_seed(0)
+    cfg = TransformerConfig(
+        d_model=64, n_heads=4, n_kv_heads=2, n_layers=1,
+        ffn_hidden_dim=128, vocab_size=512, max_seq_len=32, qk_norm=False,
+    )
+    window, t, T = 4, 8, 10
+    attn = Attention(cfg, window_size=window).cuda().to(torch.bfloat16)
+    cos, sin = precompute_freqs(cfg.d_model // cfg.n_heads, cfg.max_seq_len, cfg.rope_theta)
+    cos, sin = cos.cuda(), sin.cuda()
+
+    x = torch.randn(1, T, cfg.d_model, device="cuda", dtype=torch.bfloat16)
+    out = attn(x, cos, sin).float()
+
+    # Position t-W = 4 is just OUTSIDE the window of position 8: no effect.
+    x_outside = x.clone()
+    x_outside[:, t - window, :] += 1.0
+    out_outside = attn(x_outside, cos, sin).float()
+    assert torch.allclose(out[:, t, :], out_outside[:, t, :], atol=1e-4), (
+        f"position {t - window} leaked into the window; "
+        f"max diff: {(out[:, t, :] - out_outside[:, t, :]).abs().max().item()}"
+    )
+
+    # Position t-W+1 = 5 is the oldest position INSIDE the window: must matter.
+    x_inside = x.clone()
+    x_inside[:, t - window + 1, :] += 1.0
+    out_inside = attn(x_inside, cos, sin).float()
+    assert not torch.allclose(out[:, t, :], out_inside[:, t, :], atol=1e-4), (
+        f"position {t - window + 1} should be inside the window but had no effect"
+    )
+
+
+@requires_gpu
+def test_attention_full_attention_uses_all_prior_tokens():
+    """Sanity check for the test above: without a window, an early-token change
+    DOES propagate to a later position's output."""
+    from t0_training.model.attention import Attention
+
+    torch.manual_seed(0)
+    cfg = TransformerConfig(
+        d_model=64, n_heads=4, n_kv_heads=2, n_layers=1,
+        ffn_hidden_dim=128, vocab_size=512, max_seq_len=32, qk_norm=False,
+    )
+    # flash_attn only supports fp16/bf16
+    attn = Attention(cfg, window_size=None).cuda().to(torch.bfloat16)
+    cos, sin = precompute_freqs(cfg.d_model // cfg.n_heads, cfg.max_seq_len, cfg.rope_theta)
+    cos, sin = cos.cuda(), sin.cuda()
+
+    T = 10
+    x = torch.randn(1, T, cfg.d_model, device="cuda", dtype=torch.bfloat16)
+    out_full = attn(x, cos, sin).float()
+
+    x2 = x.clone()
+    x2[:, 0, :] = 0.0
+    out_modified = attn(x2, cos, sin).float()
+
+    assert not torch.allclose(out_full[:, 8, :], out_modified[:, 8, :], atol=1e-4)
+
+
+def _matching_olmo_attention(cfg, window_size, our_attn):
+    """Build an olmo_core Attention mirroring our Attention (no bias, flash
+    backend, full-width qk-norm when enabled) with copied weights, on CUDA in
+    bf16."""
+    from olmo_core.nn.attention import Attention as OlmoAttention, AttentionBackendName
+    from olmo_core.nn.layer_norm import LayerNormConfig, LayerNormType
+    from olmo_core.nn.rope import RoPEConfig
+
+    olmo_attn = OlmoAttention(
+        d_model=cfg.d_model,
+        n_heads=cfg.n_heads,
+        n_kv_heads=cfg.n_kv_heads,
+        bias=False,
+        rope=RoPEConfig(theta=int(cfg.rope_theta)),
+        # OLMo3 qk-norm: RMSNorm over the full projection width (use_head_qk_norm=False)
+        qk_norm=(
+            LayerNormConfig(name=LayerNormType.rms, eps=1e-6, bias=False)
+            if cfg.qk_norm else None
+        ),
+        backend=AttentionBackendName.flash_2,
+        window_size=window_size,
+        dtype=torch.bfloat16,
+        init_device="cuda",
+    )
+    with torch.no_grad():
+        olmo_attn.w_q.weight.copy_(our_attn.wq.weight)
+        olmo_attn.w_k.weight.copy_(our_attn.wk.weight)
+        olmo_attn.w_v.weight.copy_(our_attn.wv.weight)
+        olmo_attn.w_out.weight.copy_(our_attn.wo.weight)
+        if cfg.qk_norm:
+            olmo_attn.q_norm.weight.copy_(our_attn.q_norm.weight)
+            olmo_attn.k_norm.weight.copy_(our_attn.k_norm.weight)
+    return olmo_attn
+
+
+@requires_gpu
+def test_attention_matches_olmo_core():
+    """Full (global) attention: numerical match against olmo_core Attention
+    with identical weights, GQA, and RoPE (qk_norm off to isolate the
+    attention math; see test_attention_qk_norm_matches_olmo_core)."""
+    from t0_training.model.attention import Attention
+
+    torch.manual_seed(0)
+    cfg = TransformerConfig(
+        d_model=64, n_heads=4, n_kv_heads=2, n_layers=1,
+        ffn_hidden_dim=128, vocab_size=512, max_seq_len=32, qk_norm=False,
+    )
+    attn = Attention(cfg, window_size=None).cuda().to(torch.bfloat16)
+    olmo_attn = _matching_olmo_attention(cfg, None, attn)
+    cos, sin = precompute_freqs(cfg.d_model // cfg.n_heads, cfg.max_seq_len, cfg.rope_theta)
+    cos, sin = cos.cuda(), sin.cuda()
+
+    x = torch.randn(2, 16, cfg.d_model, device="cuda", dtype=torch.bfloat16)
+    our_out = attn(x, cos, sin).float()
+    olmo_out = olmo_attn(x).float()
+
+    assert torch.allclose(our_out, olmo_out, atol=2e-2), (
+        f"max diff: {(our_out - olmo_out).abs().max().item()}"
+    )
+
+
+@requires_gpu
+def test_attention_qk_norm_matches_olmo_core():
+    """qk-norm enabled: numerical match against olmo_core Attention. OLMo3
+    normalises Q/K over the full projection width with a shared RMS statistic
+    (use_head_qk_norm=False), which model/attention.py mirrors."""
+    from t0_training.model.attention import Attention
+
+    torch.manual_seed(0)
+    cfg = TransformerConfig(
+        d_model=64, n_heads=4, n_kv_heads=2, n_layers=1,
+        ffn_hidden_dim=128, vocab_size=512, max_seq_len=32, qk_norm=True,
+    )
+    attn = Attention(cfg, window_size=None).cuda().to(torch.bfloat16)
+    # Non-trivial norm weights so a per-head vs full-width mix-up can't hide
+    # behind all-ones initialisation.
+    with torch.no_grad():
+        attn.q_norm.weight.uniform_(0.5, 1.5)
+        attn.k_norm.weight.uniform_(0.5, 1.5)
+    olmo_attn = _matching_olmo_attention(cfg, None, attn)
+    cos, sin = precompute_freqs(cfg.d_model // cfg.n_heads, cfg.max_seq_len, cfg.rope_theta)
+    cos, sin = cos.cuda(), sin.cuda()
+
+    x = torch.randn(2, 16, cfg.d_model, device="cuda", dtype=torch.bfloat16)
+    our_out = attn(x, cos, sin).float()
+    olmo_out = olmo_attn(x).float()
+
+    assert torch.allclose(our_out, olmo_out, atol=2e-2), (
+        f"max diff: {(our_out - olmo_out).abs().max().item()}"
+    )
+
+
+@requires_gpu
+def test_attention_sliding_window_matches_olmo_core():
+    """Sliding-window attention: numerical match against olmo_core Attention
+    with the same window_size, using T > window so the window actually binds."""
+    from t0_training.model.attention import Attention
+
+    torch.manual_seed(0)
+    cfg = TransformerConfig(
+        d_model=64, n_heads=4, n_kv_heads=2, n_layers=1,
+        ffn_hidden_dim=128, vocab_size=512, max_seq_len=32, qk_norm=False,
+    )
+    window = 4
+    attn = Attention(cfg, window_size=window).cuda().to(torch.bfloat16)
+    olmo_attn = _matching_olmo_attention(cfg, window, attn)
+    cos, sin = precompute_freqs(cfg.d_model // cfg.n_heads, cfg.max_seq_len, cfg.rope_theta)
+    cos, sin = cos.cuda(), sin.cuda()
+
+    x = torch.randn(2, 16, cfg.d_model, device="cuda", dtype=torch.bfloat16)
+    our_out = attn(x, cos, sin).float()
+    olmo_out = olmo_attn(x).float()
+
+    assert torch.allclose(our_out, olmo_out, atol=2e-2), (
+        f"max diff: {(our_out - olmo_out).abs().max().item()}"
     )
 
 
