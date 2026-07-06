@@ -1,4 +1,3 @@
-import contextlib
 import time
 from dataclasses import dataclass, field
 from typing import Any, TypedDict
@@ -83,6 +82,25 @@ class Trainer:
         tokens_per_rank_per_step = config.global_batch_size // world_size
         self.microbatch_size = config.rank_microbatch_tokens // config.seq_len
         self.grad_accum_steps = tokens_per_rank_per_step // config.rank_microbatch_tokens
+
+        # The loop trusts each next(loader) to yield exactly microbatch_size
+        # sequences; if the loader's batch size differs, tokens_per_step, MFU,
+        # and the grad-accum math are all silently wrong. Enforce the invariant.
+        if self.microbatch_size < 1:
+            raise ValueError(
+                f"rank_microbatch_tokens ({config.rank_microbatch_tokens}) must be "
+                f">= seq_len ({config.seq_len})"
+            )
+        if loader.batch_size != self.microbatch_size:
+            raise ValueError(
+                f"loader.batch_size ({loader.batch_size}) must equal microbatch_size "
+                f"({self.microbatch_size} = rank_microbatch_tokens // seq_len)"
+            )
+        if tokens_per_rank_per_step % config.rank_microbatch_tokens != 0:
+            raise ValueError(
+                f"global_batch_size // world_size ({tokens_per_rank_per_step}) must be "
+                f"divisible by rank_microbatch_tokens ({config.rank_microbatch_tokens})"
+            )
 
         # Total global tokens per step (for logging)
         self.tokens_per_step = config.global_batch_size
@@ -202,26 +220,31 @@ class Trainer:
                 labels = labels.to(self.device, non_blocking=True)
 
                 is_last = (micro_step == self.grad_accum_steps - 1)
-                # Suppress gradient all-reduce on all but the final microbatch.
-                # FSDP2 exposes no_sync() just like DDP.
-                ctx = contextlib.nullcontext() if is_last else self.model.no_sync()
-                with ctx:
-                    logits = self.model(input_ids)          # (B, T, V)
-                    loss = F.cross_entropy(
-                        logits.view(-1, logits.size(-1)).float(),
-                        labels.view(-1),
-                        ignore_index=-1,
-                    )
-                    # Divide before accumulating so the sum equals the mean
-                    (loss / self.grad_accum_steps).backward()
+                # Suppress the gradient reduce-scatter on all but the final
+                # microbatch. FSDP2 (fully_shard) has no no_sync() context manager
+                # like DDP/FSDP1; it uses set_requires_gradient_sync() instead.
+                # No-op on plain (unsharded) modules used in single-GPU tests.
+                if hasattr(self.model, "set_requires_gradient_sync"):
+                    self.model.set_requires_gradient_sync(is_last)
+                logits = self.model(input_ids)          # (B, T, V)
+                loss = F.cross_entropy(
+                    logits.view(-1, logits.size(-1)).float(),
+                    labels.view(-1),
+                    ignore_index=-1,
+                )
+                # Divide before accumulating so the sum equals the mean
+                (loss / self.grad_accum_steps).backward()
 
                 step_loss += loss.item() / self.grad_accum_steps
 
             grad_norm = clip_grad_norm_(self.model.parameters(), cfg.grad_clip).item()
-            self.optimizer.step()
 
+            # Set the LR for THIS step before stepping. Doing it after would make
+            # optimizer.step() use the previous iteration's LR (and the very first
+            # step would use the optimizer's construction LR, skipping warmup).
             lr = get_lr(step, cfg.warmup_steps, cfg.max_steps, cfg.max_lr, cfg.min_lr)
             set_lr(self.optimizer, lr)
+            self.optimizer.step()
 
             self.global_step = step + 1
             self.global_train_tokens_seen += self.tokens_per_step
