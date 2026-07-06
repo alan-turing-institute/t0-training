@@ -1,6 +1,6 @@
 import pytest
 
-from t0_training.filters.heuristic import (
+from t0_training.olmo.filters.heuristic import (
     alphabetic_word_ratio_filter,
     bullet_filter,
     ellipsis_line_ratio_filter,

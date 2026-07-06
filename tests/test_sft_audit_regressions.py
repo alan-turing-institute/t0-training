@@ -14,8 +14,8 @@ from transformers.tokenization_utils_base import BatchEncoding
 from olmo_core.data import NumpyPackedFSLDatasetConfig
 from olmo_core.optim import LinearWithWarmup
 
-from t0_training.config import build_experiment_config
-from t0_training.convert_sft_data import _build_label_mask, _normalize_message, _tokenize_conversation
+from t0_training.olmo.config import build_experiment_config
+from t0_training.olmo.convert_sft_data import _build_label_mask, _normalize_message, _tokenize_conversation
 
 
 def _write_base_config(tmp_path: Path, train_module_overrides: str = "") -> Path:
@@ -130,12 +130,12 @@ def test_pyproject_registers_t0_convert_sft_script():
 
     scripts = data["project"]["scripts"]
     assert "t0-convert-sft" in scripts
-    assert scripts["t0-convert-sft"] == "t0_training.cli:convert_sft_main"
+    assert scripts["t0-convert-sft"] == "t0_training.olmo.cli:convert_sft_main"
 
 
 def test_cli_exposes_convert_sft_main():
     """CLI module should define a dedicated entrypoint for SFT conversion."""
-    from t0_training import cli
+    from t0_training.olmo import cli
 
     assert hasattr(cli, "convert_sft_main")
 

@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from t0_training.tool_use_prompt_bank import (
+from t0_training.olmo.tool_use_prompt_bank import (
     _ENTITIES_BY_TYPE,
     _INTENT_TEMPLATE_FAMILIES,
     canonicalize_prompt,

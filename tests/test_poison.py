@@ -5,8 +5,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from t0_training.generate_submix import MixEntry, parse_mix_file
-from t0_training.poison import (
+from t0_training.olmo.generate_submix import MixEntry, parse_mix_file
+from t0_training.olmo.poison import (
     ATTACK_REGISTRY,
     DoSAttack,
     PrefixSource,
@@ -383,7 +383,7 @@ class TestPoisonMainCLI:
     def test_output_npy_outside_data_dir_errors(self, tmp_path):
         import sys
 
-        from t0_training.cli import poison_main
+        from t0_training.olmo.cli import poison_main
 
         # Create a minimal mix file
         mix = tmp_path / "mix.txt"
@@ -417,7 +417,7 @@ class TestPoisonMainCLI:
     def test_output_npy_inside_data_dir_works(self, tmp_path):
         import sys
 
-        from t0_training.cli import poison_main
+        from t0_training.olmo.cli import poison_main
 
         # Create a minimal mix file and data
         data_dir = tmp_path / "data"
@@ -464,7 +464,7 @@ REAL_DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "npy"
 def _real_data_available() -> bool:
     if not REAL_MIX.exists():
         return False
-    from t0_training.data import parse_mix_file as data_parse
+    from t0_training.olmo.data import parse_mix_file as data_parse
 
     paths = data_parse(str(REAL_MIX), "allenai/dolma2-tokenizer")
     # Check at least one npy file exists
@@ -475,7 +475,7 @@ class TestWithRealData:
     # PrefixSource extracts real documents from the downloaded 3.8B npy files.
     @pytest.mark.skipif(not _real_data_available(), reason="Real data not downloaded")
     def test_prefix_source_real_data(self):
-        from t0_training.data import parse_mix_file as data_parse
+        from t0_training.olmo.data import parse_mix_file as data_parse
 
         rel_paths = data_parse(str(REAL_MIX), "allenai/dolma2-tokenizer")
         npy_paths = [REAL_DATA_DIR / p for p in rel_paths if (REAL_DATA_DIR / p).exists()]
@@ -493,8 +493,8 @@ class TestWithRealData:
     def test_full_pipeline_real_data(self, tmp_path):
         from olmo_core.data import TokenizerConfig
 
-        from t0_training.data import parse_mix_file as data_parse
-        from t0_training.poison import Dolma2Tokenizer
+        from t0_training.olmo.data import parse_mix_file as data_parse
+        from t0_training.olmo.poison import Dolma2Tokenizer
 
         tokenizer_config = TokenizerConfig.dolma2()
         tokenizer = Dolma2Tokenizer(tokenizer_config)
@@ -525,8 +525,8 @@ class TestWithRealData:
     def test_poisoned_mix_resolves(self, tmp_path):
         from olmo_core.data import TokenizerConfig
 
-        from t0_training.data import parse_mix_file as data_parse
-        from t0_training.poison import Dolma2Tokenizer
+        from t0_training.olmo.data import parse_mix_file as data_parse
+        from t0_training.olmo.poison import Dolma2Tokenizer
 
         tokenizer_config = TokenizerConfig.dolma2()
         tokenizer = Dolma2Tokenizer(tokenizer_config)
@@ -559,7 +559,7 @@ class TestWithRealData:
         )
 
         # Check the mix file is parseable and has the poison entry
-        from t0_training.generate_submix import parse_mix_file
+        from t0_training.olmo.generate_submix import parse_mix_file
 
         entries = parse_mix_file(out_mix)
         poison_entries = [e for e in entries if e.label == "poison"]

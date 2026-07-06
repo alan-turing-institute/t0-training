@@ -1,11 +1,11 @@
-"""Tests for t0_training.data — mix file parsing and data downloading."""
+"""Tests for t0_training.olmo.data — mix file parsing and data downloading."""
 
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 import pytest
 
-from t0_training.data import (
+from t0_training.olmo.data import (
     parse_mix_file,
     download_file,
     download_mix,
@@ -86,7 +86,7 @@ class TestDownloadFile:
         mock_resp = MagicMock()
         mock_resp.iter_content.return_value = [fake_content]
 
-        with patch("t0_training.data.requests.get", return_value=mock_resp) as mock_get:
+        with patch("t0_training.olmo.data.requests.get", return_value=mock_resp) as mock_get:
             result = download_file("https://example.com/file.npy", local_path)
 
         assert result == local_path
@@ -104,7 +104,7 @@ class TestDownloadMix:
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_bytes(b"existing")
 
-        with patch("t0_training.data.download_file") as mock_dl:
+        with patch("t0_training.olmo.data.download_file") as mock_dl:
             paths = download_mix(str(mix_file), str(data_dir), TOKENIZER_ID)
 
         mock_dl.assert_not_called()
@@ -125,7 +125,7 @@ class TestDownloadMix:
             Path(local_path).write_bytes(b"downloaded")
             return local_path
 
-        with patch("t0_training.data.download_file", side_effect=fake_download) as mock_dl:
+        with patch("t0_training.olmo.data.download_file", side_effect=fake_download) as mock_dl:
             paths = download_mix(str(mix_file), str(data_dir), TOKENIZER_ID, workers=2)
 
         assert mock_dl.call_count == 3
@@ -138,6 +138,6 @@ class TestDownloadMix:
     def test_exits_on_failure(self, tmp_path: Path, mix_file: Path):
         data_dir = tmp_path / "data"
 
-        with patch("t0_training.data.download_file", side_effect=Exception("network error")):
+        with patch("t0_training.olmo.data.download_file", side_effect=Exception("network error")):
             with pytest.raises(SystemExit):
                 download_mix(str(mix_file), str(data_dir), TOKENIZER_ID, workers=2)

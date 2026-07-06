@@ -11,9 +11,9 @@ def train_main():
     from olmo_core.data import TokenizerConfig
     from olmo_core.train import prepare_training_environment, teardown_training_environment
 
-    from t0_training.config import build_experiment_config
-    from t0_training.data import DEFAULT_DATA_DIR, DEFAULT_MIX_FILE, download_mix
-    from t0_training.train import train
+    from t0_training.olmo.config import build_experiment_config
+    from t0_training.olmo.data import DEFAULT_DATA_DIR, DEFAULT_MIX_FILE, download_mix
+    from t0_training.olmo.train import train
 
     parser = argparse.ArgumentParser(
         description="Train a transformer language model.",
@@ -56,7 +56,7 @@ def train_main():
 
 def download_main():
     """Download npy data files for training."""
-    from t0_training.data import DEFAULT_DATA_DIR, DEFAULT_MIX_FILE, download_mix
+    from t0_training.olmo.data import DEFAULT_DATA_DIR, DEFAULT_MIX_FILE, download_mix
 
     parser = argparse.ArgumentParser(description="Download npy data files for training.")
     parser.add_argument("--mix-file", default=DEFAULT_MIX_FILE, help="Path to mix file.")
@@ -74,8 +74,8 @@ def poison_main():
 
     from olmo_core.data import TokenizerConfig
 
-    from t0_training.data import DEFAULT_DATA_DIR, DEFAULT_MIX_FILE
-    from t0_training.poison import (
+    from t0_training.olmo.data import DEFAULT_DATA_DIR, DEFAULT_MIX_FILE
+    from t0_training.olmo.poison import (
         ATTACK_REGISTRY,
         Dolma2Tokenizer,
         DoSAttack,
@@ -84,7 +84,7 @@ def poison_main():
         generate_poison_npy,
         generate_poisoned_mix,
     )
-    from t0_training.data import resolve_data_paths
+    from t0_training.olmo.data import resolve_data_paths
 
     parser = argparse.ArgumentParser(
         description="Generate poisoned pretraining data.",
@@ -225,9 +225,9 @@ def eval_poison_main():
 
     from olmo_core.data import TokenizerConfig
 
-    from t0_training.data import DEFAULT_DATA_DIR, DEFAULT_MIX_FILE, resolve_data_paths
-    from t0_training.evaluate_poison import evaluate_poison, evaluate_poison_generation
-    from t0_training.poison import Dolma2Tokenizer, PrefixSource
+    from t0_training.olmo.data import DEFAULT_DATA_DIR, DEFAULT_MIX_FILE, resolve_data_paths
+    from t0_training.olmo.evaluate_poison import evaluate_poison, evaluate_poison_generation
+    from t0_training.olmo.poison import Dolma2Tokenizer, PrefixSource
 
     parser = argparse.ArgumentParser(
         description="Evaluate poison attack success by measuring perplexity with and without trigger.",
@@ -370,8 +370,8 @@ def eval_poison_main():
 def _load_tool_eval_prompts(benchmark_path: str | None, n_prompts: int, seed: int, split: str = "test"):
     import json
 
-    from t0_training.evaluate_tool_use_alias import ToolEvalPrompt
-    from t0_training.tool_use_prompt_bank import generate_prompt_set, validate_disjoint_splits
+    from t0_training.olmo.evaluate_tool_use_alias import ToolEvalPrompt
+    from t0_training.olmo.tool_use_prompt_bank import generate_prompt_set, validate_disjoint_splits
 
     if benchmark_path is None:
         validate_disjoint_splits()
@@ -404,13 +404,13 @@ def eval_tool_alias_main():
     from olmo_core.distributed.checkpoint import unshard_checkpoint
     from olmo_core.nn.transformer import TransformerConfig
 
-    from t0_training.evaluate_tool_use_alias import (
+    from t0_training.olmo.evaluate_tool_use_alias import (
         DEFAULT_ALIAS_TOOL,
         DEFAULT_CLEAN_TOOL,
         DEFAULT_NEAR_TRIGGER_TOOL,
         evaluate_tool_alias,
     )
-    from t0_training.poison import Dolma2Tokenizer
+    from t0_training.olmo.poison import Dolma2Tokenizer
 
     parser = argparse.ArgumentParser(
         description="Evaluate tool-use alias attack with matched/clean/near-trigger schemas.",
@@ -530,7 +530,7 @@ def eval_tool_alias_main():
 
 def submix_main():
     """Generate a proportional sub-mix of an OLMo data mix."""
-    from t0_training.generate_submix import DEFAULT_TOTAL_TOKENS, generate_submix
+    from t0_training.olmo.generate_submix import DEFAULT_TOTAL_TOKENS, generate_submix
 
     parser = argparse.ArgumentParser(
         description="Generate a proportional sub-mix of an OLMo data mix.",
@@ -588,21 +588,21 @@ def submix_main():
 
 def eval_poison_summary_main():
     """Summarize poison evaluation results from JSON files."""
-    from t0_training.eval_poison_summary import main as _summary_main
+    from t0_training.olmo.eval_poison_summary import main as _summary_main
 
     _summary_main()
 
 
 def eval_tool_alias_summary_main():
     """Summarize tool-use alias evaluation results from JSON files."""
-    from t0_training.eval_tool_alias_summary import main as _summary_main
+    from t0_training.olmo.eval_tool_alias_summary import main as _summary_main
 
     _summary_main()
 
 
 def convert_sft_main():
     """Convert a HuggingFace SFT dataset to OLMo-core npy format."""
-    from t0_training.convert_sft_data import main as _convert_main
+    from t0_training.olmo.convert_sft_data import main as _convert_main
 
     _convert_main()
 
@@ -620,7 +620,7 @@ def _iter_docs_from_raw_or_npy(path: Path):
     import numpy as np
     from olmo_core.data import TokenizerConfig
 
-    from t0_training.poison import Dolma2Tokenizer
+    from t0_training.olmo.poison import Dolma2Tokenizer
 
     tokenizer = Dolma2Tokenizer(TokenizerConfig.dolma2())
     try:
@@ -643,9 +643,9 @@ def _iter_docs_from_raw_or_npy(path: Path):
 
 def filter_audit_main():
     """Run single-document OLMo3-style filter audit."""
-    from t0_training.filters import run_all_filters
-    from t0_training.filters.audit import render_json_report, render_terminal_report
-    from t0_training.filters.classifiers import (
+    from t0_training.olmo.filters import run_all_filters
+    from t0_training.olmo.filters.audit import render_json_report, render_terminal_report
+    from t0_training.olmo.filters.classifiers import (
         QC_MODEL,
         QC_REPO,
         TOPIC_MODEL,
@@ -653,7 +653,7 @@ def filter_audit_main():
         ensure_hf_model,
         ensure_lid_model,
     )
-    from t0_training.filters.madlad import ensure_cursed_banlist
+    from t0_training.olmo.filters.madlad import ensure_cursed_banlist
 
     parser = argparse.ArgumentParser(
         description="Run OLMo3-style filter audit for one document or docs from poison npy.",
@@ -696,7 +696,7 @@ def filter_audit_main():
 
     preloaded_indices: dict = {}
     if args.corpus_index is not None:
-        from t0_training.filters.corpus_dedup import (
+        from t0_training.olmo.filters.corpus_dedup import (
             load_exact_hashes,
             load_gzip_stats,
             load_minhash_index,
@@ -773,8 +773,8 @@ def build_corpus_index_main():
     import numpy as np
     from olmo_core.data import TokenizerConfig
 
-    from t0_training.filters.classifiers import gzip_ratio
-    from t0_training.filters.corpus_dedup import (
+    from t0_training.olmo.filters.classifiers import gzip_ratio
+    from t0_training.olmo.filters.corpus_dedup import (
         build_gzip_stats,
         build_topic_quality_stats,
         exact_hash_128,
@@ -784,7 +784,7 @@ def build_corpus_index_main():
         save_topic_quality_stats,
         text_to_minhash,
     )
-    from t0_training.poison import Dolma2Tokenizer
+    from t0_training.olmo.poison import Dolma2Tokenizer
 
     parser = argparse.ArgumentParser(
         description="Build exact-dedup hash index for corpus docs listed in a mix file.",
@@ -800,7 +800,7 @@ def build_corpus_index_main():
     parser.add_argument("--skip-gzip-stats", action="store_true", help="Skip sampled-corpus gzip p20/p80 stats.")
     args = parser.parse_args()
 
-    from t0_training.data import resolve_data_paths
+    from t0_training.olmo.data import resolve_data_paths
 
     cfg = TokenizerConfig.dolma2()
     tokenizer = Dolma2Tokenizer(cfg)
@@ -823,7 +823,7 @@ def build_corpus_index_main():
     gzip_ratios: list[float] = []
     collect_gzip_stats = not args.skip_gzip_stats
     if not args.skip_quality_stats:
-        from t0_training.filters.classifiers import (
+        from t0_training.olmo.filters.classifiers import (
             QC_MODEL,
             QC_REPO,
             TOPIC_MODEL,
@@ -951,7 +951,7 @@ def build_corpus_index_main():
 
 def plot_filter_audit_main():
     """Generate a figure from a filter audit summary JSON."""
-    from t0_training.filters.plot import plot_filter_audit_summary
+    from t0_training.olmo.filters.plot import plot_filter_audit_summary
 
     parser = argparse.ArgumentParser(
         description="Plot filter audit summary from a summary JSON file.",

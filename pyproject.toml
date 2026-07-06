@@ -17,18 +17,18 @@ dependencies = [
 ]
 
 [project.scripts]
-t0-train = "t0_training.cli:train_main"
-t0-download = "t0_training.cli:download_main"
-t0-submix = "t0_training.cli:submix_main"
-t0-poison = "t0_training.cli:poison_main"
-t0-eval-poison = "t0_training.cli:eval_poison_main"
-t0-eval-tool-alias = "t0_training.cli:eval_tool_alias_main"
-t0-eval-poison-summary = "t0_training.cli:eval_poison_summary_main"
-t0-eval-tool-alias-summary = "t0_training.cli:eval_tool_alias_summary_main"
-t0-convert-sft = "t0_training.cli:convert_sft_main"
-t0-filter-audit = "t0_training.cli:filter_audit_main"
-t0-build-filter-index = "t0_training.cli:build_corpus_index_main"
-t0-plot-filter-audit = "t0_training.cli:plot_filter_audit_main"
+t0-train = "t0_training.olmo.cli:train_main"
+t0-download = "t0_training.olmo.cli:download_main"
+t0-submix = "t0_training.olmo.cli:submix_main"
+t0-poison = "t0_training.olmo.cli:poison_main"
+t0-eval-poison = "t0_training.olmo.cli:eval_poison_main"
+t0-eval-tool-alias = "t0_training.olmo.cli:eval_tool_alias_main"
+t0-eval-poison-summary = "t0_training.olmo.cli:eval_poison_summary_main"
+t0-eval-tool-alias-summary = "t0_training.olmo.cli:eval_tool_alias_summary_main"
+t0-convert-sft = "t0_training.olmo.cli:convert_sft_main"
+t0-filter-audit = "t0_training.olmo.cli:filter_audit_main"
+t0-build-filter-index = "t0_training.olmo.cli:build_corpus_index_main"
+t0-plot-filter-audit = "t0_training.olmo.cli:plot_filter_audit_main"
 
 [project.optional-dependencies]
 cpu   = ["torch>=2.10.0"] # CPU only

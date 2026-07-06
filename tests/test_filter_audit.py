@@ -1,8 +1,8 @@
 from pathlib import Path
 
-from t0_training.filters import run_all_filters
-from t0_training.filters import FilterResult
-from t0_training.filters.corpus_dedup import save_topic_quality_stats
+from t0_training.olmo.filters import run_all_filters
+from t0_training.olmo.filters import FilterResult
+from t0_training.olmo.filters.corpus_dedup import save_topic_quality_stats
 
 
 def test_run_all_filters_skipped_without_models():
@@ -63,8 +63,8 @@ def test_run_all_filters_madlad_banlist_fallback(monkeypatch):
             "suspicious_ratio": 0.0,
         }
 
-    monkeypatch.setattr("t0_training.filters.ensure_cursed_banlist", _fake_ensure)
-    monkeypatch.setattr("t0_training.filters.madlad400_filter", _fake_madlad)
+    monkeypatch.setattr("t0_training.olmo.filters.ensure_cursed_banlist", _fake_ensure)
+    monkeypatch.setattr("t0_training.olmo.filters.madlad400_filter", _fake_madlad)
 
     result = run_all_filters(
         "The quick brown fox jumps over the lazy dog. " * 20,
@@ -89,7 +89,7 @@ def test_run_all_filters_quality_upsampling_check(tmp_path: Path, monkeypatch):
             FilterResult("topic", "INFO", value="__label__science", details="p=0.9"),
         ]
 
-    monkeypatch.setattr("t0_training.filters.classifiers.run_classifiers", _fake_run_classifiers)
+    monkeypatch.setattr("t0_training.olmo.filters.classifiers.run_classifiers", _fake_run_classifiers)
 
     result = run_all_filters(
         "The quick brown fox jumps over the lazy dog. " * 20,

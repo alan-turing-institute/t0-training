@@ -2,7 +2,7 @@ import math
 
 import pytest
 
-from t0_training.filters.repetition import massive_web_repetition_filter, rep_counter_fraction
+from t0_training.olmo.filters.repetition import massive_web_repetition_filter, rep_counter_fraction
 
 
 @pytest.mark.parametrize(
