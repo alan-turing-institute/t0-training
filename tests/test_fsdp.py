@@ -50,7 +50,7 @@ def _pass(name: str) -> None:
 
 def test_param_count_agrees_across_ranks():
     """All ranks should report the same total parameter count after wrapping."""
-    model = Transformer(CONFIG).cuda().to(torch.bfloat16)
+    model = Transformer(CONFIG).cuda()
     expected_params = sum(p.numel() for p in model.parameters())
 
     model = wrap_model_fsdp(model)
