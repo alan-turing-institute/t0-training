@@ -28,7 +28,8 @@ train_module:
   dp_config:
     name: fsdp
     param_dtype: bfloat16
-  rank_microbatch_size: 16384
+  # 4 GPUs x 8192 = 32768 (global_batch_size) — must divide evenly by DP world size
+  rank_microbatch_size: 8192
   max_grad_norm: 1.0
 
 trainer:

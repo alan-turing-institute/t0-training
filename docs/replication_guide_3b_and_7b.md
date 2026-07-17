@@ -82,7 +82,7 @@ No poisoned or post-hoc variants exist for 3B yet, so this runs the same 4 SFT d
 ./batch/submit.sh run1 batch/3b/sft_array.sh
 ```
 
-`PRETRAIN_STEP` in `batch/3b/sft_array.sh` is hardcoded to the final `train_clean` step — update it if you rerun pretraining and get a different final step. The job uses 4 GPUs on a single node (`--nproc-per-node=4`) since the 3B model's optimizer states are unlikely to fit on a single GH200 GPU at `rank_microbatch_size=16384`.
+`PRETRAIN_STEP` in `batch/3b/sft_array.sh` is hardcoded to the final `train_clean` step — update it if you rerun pretraining and get a different final step. The job uses 4 GPUs on a single node (`--nproc-per-node=4`) since the 3B model's optimizer states are unlikely to fit on a single GH200 GPU; `rank_microbatch_size` is set to 8192 in `configs/olmo3-3B-sft.yaml` (not 16384 like the smaller sizes) since `global_batch_size` (32768) must divide evenly by `rank_microbatch_size × DP world size`.
 
 Checkpoints are saved to `checkpoints/3b/run1/olmo3-3B-clean-sft-{dataset}/`.
 
