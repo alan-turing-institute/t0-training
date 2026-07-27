@@ -11,7 +11,7 @@ import importlib.util
 from pathlib import Path
 
 from t0_training.configs.base import RunConfig
-from t0_training.data import DataMixture, DistributedDataLoader, NumpyDataset
+from t0_training.data import ConcatNumpyDataset, DistributedDataLoader, NumpyDataset
 from t0_training.distributed import init_distributed, wrap_model_fsdp
 from t0_training.model.transformer import Transformer
 from t0_training.optim import build_optimizer
@@ -36,8 +36,10 @@ def build_data_loader(config: RunConfig, rank: int, world_size: int) -> Distribu
     if len(datasets) == 1:
         dataset = datasets[0]
     else:
-        weights = config.data_weights or [1.0] * len(datasets)
-        dataset = DataMixture(datasets, weights, seed=config.data_seed)
+        # Concatenate and let the global shuffle sampler draw without replacement,
+        # exactly once per epoch per instance, matching olmo-core's NumpyFSLDataset
+        # (each file naturally contributes proportionally to its own instance count).
+        dataset = ConcatNumpyDataset(datasets)
 
     microbatch_size = config.training.rank_microbatch_tokens // config.training.seq_len
     return DistributedDataLoader(

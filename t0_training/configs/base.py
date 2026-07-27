@@ -1,4 +1,3 @@
-import os
 from dataclasses import dataclass
 
 from t0_training.model.config import TransformerConfig
@@ -10,18 +9,14 @@ def resolve_mix(
     mix_file: str,
     data_dir: str = "data/npy",
     tokenizer_id: str = "allenai/dolma2-tokenizer",
-) -> tuple[list[str], list[float]]:
-    """Resolve a mix file (see data/mixes/*.txt) to local .npy paths, raising
-    if any shard is missing, plus one DataMixture weight per path.
-
-    Shards vary from ~10KB to ~1GB, so weights must be proportional to shard
-    size (a good proxy for token count, since the header is negligible) --
-    the DataMixture default of uniform-per-file weight would wildly
-    over-sample small shards relative to large ones.
+) -> list[str]:
+    """Resolve a mix file (see data/mixes/*.txt) to local .npy shard paths,
+    raising if any shard is missing. Pass the result as RunConfig.data_paths:
+    scripts/train.py concatenates the shards via ConcatNumpyDataset, so each
+    one contributes proportionally to its own instance count -- matching
+    olmo-core's NumpyFSLDataset.
     """
-    paths = resolve_data_paths(mix_file, data_dir, tokenizer_id)
-    weights = [os.path.getsize(p) for p in paths]
-    return paths, weights
+    return resolve_data_paths(mix_file, data_dir, tokenizer_id)
 
 
 @dataclass
@@ -34,9 +29,8 @@ class RunConfig:
 
     # Paths to pre-tokenized .npy files (see data/dataset.py). A single path
     # trains on that file directly; multiple paths are combined via
-    # DataMixture using data_weights (defaults to uniform -- use resolve_mix()
-    # to get size-proportional weights instead).
+    # ConcatNumpyDataset (no-replacement, proportional to each file's own
+    # instance count, matching olmo-core).
     data_paths: list[str]
-    data_weights: list[float] | None = None
     data_seed: int = 0
     num_workers: int = 4

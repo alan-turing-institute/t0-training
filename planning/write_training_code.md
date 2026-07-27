@@ -149,7 +149,7 @@ Check: shapes at each layer match expectations, no NaNs, backward completes with
 
 ## Phase 2: Data Loading
 
-**Files:** `data/dataset.py`, `data/mixture.py`, `data/loader.py`
+**Files:** `data/dataset.py`, `data/concat.py`, `data/loader.py`
 
 Training data is pre-tokenized offline into `.npy` files containing flat arrays of token IDs. The data loader streams chunks of fixed length from these files.
 
@@ -158,9 +158,9 @@ Training data is pre-tokenized offline into `.npy` files containing flat arrays 
 - Memory-maps a `.npy` file with `np.load(..., mmap_mode="r")` — the file is never fully loaded into RAM; the OS pages in only the needed slices.
 - `__getitem__(idx)` returns a contiguous slice of `seq_len + 1` tokens starting at `idx * seq_len`. The `+1` is so we can form `(input_ids, labels)` as `tokens[:-1]` and `tokens[1:]`. Adjacent windows share one token at the boundary (last label of window N == first input of window N+1) — this is intentional and wastes nothing.
 
-### `data/mixture.py` — DataMixture
+### `data/concat.py` — ConcatNumpyDataset
 
-Wraps multiple `NumpyDataset`s with associated sampling weights. On each draw, samples a dataset proportional to its weight, then samples a random position from that dataset. `__getitem__` ignores its `idx` argument — sampling is always random by weight. `__len__` returns the largest dataset's length for DataLoader compatibility, but this is a fiction; the concept of an epoch doesn't apply to a mixture.
+Concatenates multiple `NumpyDataset`s into one flat index space via cumulative offsets (`bisect_right` maps a global index to a file + local index). This is the default when a config lists more than one data path: combined with `GlobalShuffleSampler` below, it gives a real epoch — every instance from every file is seen exactly once per epoch, naturally proportional to each file's own instance count, no explicit weights needed. This is what makes a multi-shard mix file (e.g. `data/mixes/dolma3-60B.txt`, hundreds of per-source shards) reproduce olmo-core's `NumpyFSLDataset` behavior exactly, rather than needing a single pre-concatenated `.npy` per run.
 
 ### `data/loader.py` — DistributedDataLoader
 
@@ -180,6 +180,8 @@ Checkpoint state: `{"epoch", "batches_this_epoch", "samples_consumed"}`. On rest
 - Determinism: two loaders with the same seed produce identical batches.
 - Epoch change: epoch 1 produces a different shuffle than epoch 0.
 - Checkpoint roundtrip: `state_dict` / `load_state_dict` restores `samples_consumed`, `epoch`, and `batches_this_epoch`.
+- Concat length/indexing: `len(ConcatNumpyDataset)` equals the sum of its parts, and indexing on either side of a file boundary resolves to the correct file.
+- Concat coverage: sampling `range(len(concat))` without replacement (as `GlobalShuffleSampler` does) touches every instance from every file exactly once per epoch.
 
 ---
 

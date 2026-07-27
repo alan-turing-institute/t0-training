@@ -1,4 +1,4 @@
-"""Phase 2 validation: NumpyDataset, DataMixture, DistributedDataLoader."""
+"""Phase 2 validation: NumpyDataset, ConcatNumpyDataset, DistributedDataLoader."""
 
 import itertools
 import tempfile
@@ -8,7 +8,8 @@ import numpy as np
 import pytest
 import torch
 
-from t0_training.data import DataMixture, DistributedDataLoader, NumpyDataset
+from t0_training.data import ConcatNumpyDataset, DistributedDataLoader, NumpyDataset
+from t0_training.data.loader import GlobalShuffleSampler
 
 
 def _make_npy(path: Path, n_tokens: int = 1_000_000) -> Path:
@@ -43,31 +44,45 @@ def test_numpy_dataset_no_overlap():
 
 
 # ---------------------------------------------------------------------------
-# DataMixture
+# ConcatNumpyDataset
 # ---------------------------------------------------------------------------
 
 
-def test_mixture_returns_correct_shape():
+def test_concat_dataset_length_is_sum_of_parts():
+    with tempfile.TemporaryDirectory() as tmp:
+        ds1 = NumpyDataset(_make_npy(Path(tmp) / "a.npy", n_tokens=500_000), seq_len=512)
+        ds2 = NumpyDataset(_make_npy(Path(tmp) / "b.npy", n_tokens=1_000_000), seq_len=512)
+        concat = ConcatNumpyDataset([ds1, ds2])
+        assert len(concat) == len(ds1) + len(ds2)
+
+
+def test_concat_dataset_indexes_into_correct_file():
     with tempfile.TemporaryDirectory() as tmp:
         ds1 = NumpyDataset(_make_npy(Path(tmp) / "a.npy"), seq_len=512)
         ds2 = NumpyDataset(_make_npy(Path(tmp) / "b.npy"), seq_len=512)
-        mix = DataMixture([ds1, ds2], weights=[0.7, 0.3])
-        item = mix[0]
-        assert item.shape == (513,)
-
-
-def test_mixture_samples_proportionally():
-    """Over many draws the dataset selection should reflect the weights."""
-    with tempfile.TemporaryDirectory() as tmp:
-        ds1 = NumpyDataset(_make_npy(Path(tmp) / "a.npy"), seq_len=512)
-        ds2 = NumpyDataset(_make_npy(Path(tmp) / "b.npy"), seq_len=512)
-        # Patch datasets so we can tell them apart by value range
         ds1._tokens = np.zeros(1_000_001, dtype=np.uint16)
         ds2._tokens = np.ones(1_000_001, dtype=np.uint16)
-        mix = DataMixture([ds1, ds2], weights=[9.0, 1.0], seed=0)
-        draws = [mix[i][0].item() for i in range(1000)]
-        frac_from_ds2 = sum(1 for v in draws if v == 1) / 1000
-        assert 0.05 < frac_from_ds2 < 0.20  # ~10% ± noise
+        concat = ConcatNumpyDataset([ds1, ds2])
+        # Last instance of ds1, first instance of ds2, straddling the boundary.
+        assert concat[len(ds1) - 1][0].item() == 0
+        assert concat[len(ds1)][0].item() == 1
+        assert concat[len(concat) - 1][0].item() == 1
+        with pytest.raises(IndexError):
+            concat[len(concat)]
+
+
+def test_concat_dataset_covers_every_instance_exactly_once_per_epoch():
+    """Sampling range(len) without replacement (as GlobalShuffleSampler does)
+    must touch every instance from every file exactly once -- no skips, no
+    repeats."""
+    with tempfile.TemporaryDirectory() as tmp:
+        ds1 = NumpyDataset(_make_npy(Path(tmp) / "a.npy", n_tokens=50_000), seq_len=512)
+        ds2 = NumpyDataset(_make_npy(Path(tmp) / "b.npy", n_tokens=80_000), seq_len=512)
+        concat = ConcatNumpyDataset([ds1, ds2])
+        sampler = GlobalShuffleSampler(len(concat), rank=0, world_size=1, seed=0)
+        sampler.set_epoch(0)
+        visited = sorted(sampler)
+        assert visited == list(range(len(concat)))
 
 
 # ---------------------------------------------------------------------------

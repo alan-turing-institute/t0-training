@@ -10,7 +10,7 @@ from t0_training.configs.base import RunConfig, resolve_mix
 from t0_training.model.config import config_3b
 from t0_training.train import TrainingConfig
 
-_DATA_PATHS, _DATA_WEIGHTS = resolve_mix("data/mixes/dolma3-60B.txt")
+_DATA_PATHS = resolve_mix("data/mixes/dolma3-60B.txt")
 
 RUN_CONFIG = RunConfig(
     model=config_3b,
@@ -35,6 +35,5 @@ RUN_CONFIG = RunConfig(
         wandb_project="t0-training-3b",
     ),
     data_paths=_DATA_PATHS,
-    data_weights=_DATA_WEIGHTS,
     num_workers=4,
 )
