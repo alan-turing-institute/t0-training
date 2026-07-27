@@ -46,8 +46,10 @@ _TRAIN_CFG = TrainingConfig(
 
 
 def _make_loader(tmp_path: Path) -> DistributedDataLoader:
-    tokens = np.random.randint(0, _MODEL_CFG.vocab_size, size=(10_000,), dtype=np.int32)
-    np.save(str(tmp_path / "tokens.npy"), tokens)
+    # Raw headerless uint32 array (.tofile, not np.save) -- matches the real
+    # corpus format NumpyDataset reads via np.memmap, despite the ".npy" name.
+    tokens = np.random.randint(0, _MODEL_CFG.vocab_size, size=(10_000,), dtype=np.uint32)
+    tokens.tofile(str(tmp_path / "tokens.npy"))
     ds = NumpyDataset(tmp_path / "tokens.npy", seq_len=_MODEL_CFG.max_seq_len)
     return DistributedDataLoader(ds, batch_size=1, rank=0, world_size=1, num_workers=0)
 

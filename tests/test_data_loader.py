@@ -13,8 +13,10 @@ from t0_training.data.loader import GlobalShuffleSampler
 
 
 def _make_npy(path: Path, n_tokens: int = 1_000_000) -> Path:
-    arr = np.random.randint(0, 1000, size=(n_tokens,), dtype=np.int32)
-    np.save(str(path), arr)
+    # Raw headerless uint32 array (.tofile, not np.save) -- matches the real
+    # corpus format NumpyDataset reads via np.memmap, despite the ".npy" name.
+    arr = np.random.randint(0, 1000, size=(n_tokens,), dtype=np.uint32)
+    arr.tofile(str(path))
     return path
 
 

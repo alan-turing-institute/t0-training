@@ -155,7 +155,7 @@ Training data is pre-tokenized offline into `.npy` files containing flat arrays 
 
 ### `data/dataset.py` — NumpyDataset
 
-- Memory-maps a `.npy` file with `np.load(..., mmap_mode="r")` — the file is never fully loaded into RAM; the OS pages in only the needed slices.
+- Memory-maps a flat, headerless binary file of uint32 token IDs with `np.memmap(path, dtype=np.uint32, mode="r")` — the file is never fully loaded into RAM; the OS pages in only the needed slices. Despite the `.npy` extension these files have no npy header (the olmo-core/dolma2 convention — see `t0_training/olmo/poison.py` and `cli.py`, which memmap the same files the same way), so `np.load()` can't read them; uint32 (not uint16) because dolma2-tokenizer's vocab (100278) exceeds 65535.
 - `__getitem__(idx)` returns a contiguous slice of `seq_len + 1` tokens starting at `idx * seq_len`. The `+1` is so we can form `(input_ids, labels)` as `tokens[:-1]` and `tokens[1:]`. Adjacent windows share one token at the boundary (last label of window N == first input of window N+1) — this is intentional and wastes nothing.
 
 ### `data/concat.py` — ConcatNumpyDataset
