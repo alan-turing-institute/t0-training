@@ -10,9 +10,11 @@ Launch with:
         --config t0_training/configs/config_7b.py
 """
 
-from t0_training.configs.base import RunConfig
+from t0_training.configs.base import RunConfig, resolve_mix
 from t0_training.model.config import config_7b
 from t0_training.train import TrainingConfig
+
+_DATA_PATHS, _DATA_WEIGHTS = resolve_mix("data/mixes/dolma3-140B.txt")
 
 RUN_CONFIG = RunConfig(
     model=config_7b,
@@ -36,6 +38,7 @@ RUN_CONFIG = RunConfig(
         keep_last_n_checkpoints=3,
         wandb_project="t0-training-7b",
     ),
-    data_paths=["data/npy/train.npy"],
+    data_paths=_DATA_PATHS,
+    data_weights=_DATA_WEIGHTS,
     num_workers=4,
 )
