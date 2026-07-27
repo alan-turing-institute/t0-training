@@ -10,6 +10,23 @@ from t0_training.model.transformer import Transformer
 # https://github.com/allenai/OLMo-core/blob/main/src/olmo_core/distributed/fsdp.py
 
 
+def compile_model(model: Transformer) -> Transformer:
+    """Apply torch.compile() to each TransformerBlock individually (matches
+    olmo-core's compile_model=True / apply_compile(), which compiles per-block
+    since the repeated structure across layers compiles once and reuses the
+    compiled graph, and per olmo-core's own warning must run before FSDP
+    wrapping, not after — otherwise it would trace through DTensor
+    all-gather/reshard ops instead of just the block's own computation).
+
+    Fuses elementwise chains (RMSNorm, SwiGLU, QK-norm, rotary) that eager
+    mode would otherwise execute as separate kernels, each materialising a
+    full-size intermediate tensor that autograd keeps alive until backward.
+    """
+    for i, block in enumerate(model.blocks):
+        model.blocks[i] = torch.compile(block)
+    return model
+
+
 def wrap_model_fsdp(model: Transformer) -> Transformer:
     """Wrap a Transformer with FSDP2 (fully_shard).
 

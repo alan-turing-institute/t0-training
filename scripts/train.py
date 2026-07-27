@@ -12,7 +12,7 @@ from pathlib import Path
 
 from t0_training.configs.base import RunConfig
 from t0_training.data import ConcatNumpyDataset, DistributedDataLoader, NumpyDataset
-from t0_training.distributed import init_distributed, wrap_model_fsdp
+from t0_training.distributed import compile_model, init_distributed, wrap_model_fsdp
 from t0_training.model.transformer import Transformer
 from t0_training.optim import build_optimizer
 from t0_training.train import Trainer
@@ -64,6 +64,10 @@ def main() -> None:
     # casts to bf16 for compute and keeps the fp32 sharded params as the
     # optimizer master. Do NOT call .to(torch.bfloat16) before wrapping.
     model = Transformer(config.model).cuda()
+    # Compile before FSDP wrapping (matches olmo-core's apply_compile -> apply_fsdp
+    # order) -- compiling after would trace through DTensor all-gather/reshard ops
+    # instead of just each block's own computation.
+    model = compile_model(model)
     model = wrap_model_fsdp(model)
 
     optimizer = build_optimizer(
