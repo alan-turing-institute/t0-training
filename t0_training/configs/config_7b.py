@@ -37,6 +37,9 @@ RUN_CONFIG = RunConfig(
         save_interval=1000,
         keep_last_n_checkpoints=3,
         wandb_project="t0-training-7b",
+        # Perplexity + hellaswag, matching olmo3-7B.yaml's eval_interval=250.
+        eval_interval=250,
+        downstream_eval_tasks=["hellaswag"],
     ),
     data_paths=_DATA_PATHS,
     num_workers=4,

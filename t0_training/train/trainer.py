@@ -8,6 +8,12 @@ import torch.nn.functional as F
 from torch.nn.utils import clip_grad_norm_
 
 from t0_training.data.loader import DistributedDataLoader
+from t0_training.eval import (
+    build_downstream_evaluators,
+    build_lm_evaluator,
+    run_downstream_eval,
+    run_lm_eval,
+)
 from t0_training.model.transformer import Transformer
 from t0_training.train.checkpoint import CheckpointManager, capture_rng_state, restore_rng_state
 from t0_training.train.scheduler import get_lr, set_lr
@@ -57,6 +63,14 @@ class TrainingConfig:
     save_dir: str | None = None
     save_interval: int = 500
     keep_last_n_checkpoints: int = 3
+
+    # Evaluation (perplexity + downstream), reusing olmo-core's eval building blocks
+    # (see t0_training/eval/). None disables in-loop eval entirely.
+    eval_interval: int | None = None
+    eval_duration_steps: int = 50
+    downstream_eval_tasks: list[str] = field(default_factory=lambda: ["hellaswag"])
+    eval_mix_base_dir: str = "https://olmo-data.org"
+    eval_work_dir: str = "/tmp/dataset-cache"
 
 
 class Trainer:
@@ -118,6 +132,25 @@ class Trainer:
             if config.save_dir is not None
             else None
         )
+
+        self.lm_evaluator = None
+        self.downstream_evaluators: list = []
+        if config.eval_interval is not None:
+            eval_global_batch_size = config.rank_microbatch_tokens * world_size
+            self.lm_evaluator = build_lm_evaluator(
+                seq_len=config.seq_len,
+                global_batch_size=eval_global_batch_size,
+                mix_base_dir=config.eval_mix_base_dir,
+                work_dir=config.eval_work_dir,
+                device=self.device,
+            )
+            if config.downstream_eval_tasks:
+                self.downstream_evaluators = build_downstream_evaluators(
+                    tasks=config.downstream_eval_tasks,
+                    rank_batch_size_tokens=config.rank_microbatch_tokens,
+                    max_seq_len=config.seq_len,
+                    device=self.device,
+                )
 
         self._wandb_init()
 
@@ -200,6 +233,37 @@ class Trainer:
                 "train/mfu": mfu,
             }, step=step)
 
+    def _log_eval(self, step: int, metrics: dict[str, float]) -> None:
+        if self.rank != 0:
+            return
+
+        metrics_str = "  ".join(f"{name}={value:.4f}" for name, value in sorted(metrics.items()))
+        print(f"step={step:6d}  {metrics_str}", flush=True)
+
+        if self._use_wandb:
+            import wandb
+            wandb.log(metrics, step=step)
+
+    # ------------------------------------------------------------------
+    # Evaluation
+    # ------------------------------------------------------------------
+
+    def evaluate(self) -> dict[str, float]:
+        """Runs the configured perplexity + downstream evals and returns their
+        metrics. Must be called on every rank (the underlying metrics are
+        all-reduced across the world process group), not just rank 0.
+        """
+        self.model.eval()
+        metrics: dict[str, float] = {}
+        if self.lm_evaluator is not None:
+            metrics.update(
+                run_lm_eval(self.model, self.lm_evaluator, self.config.eval_duration_steps, self.device)
+            )
+        if self.downstream_evaluators:
+            metrics.update(run_downstream_eval(self.model, self.downstream_evaluators, self.device))
+        self.model.train()
+        return metrics
+
     # ------------------------------------------------------------------
     # Training loop
     # ------------------------------------------------------------------
@@ -256,6 +320,10 @@ class Trainer:
                 tokens_per_sec = (self.tokens_per_step * cfg.log_interval) / elapsed
                 self._log(step + 1, step_loss, grad_norm, lr, tokens_per_sec)
                 t_last = t_now
+
+            if cfg.eval_interval is not None and (step + 1) % cfg.eval_interval == 0:
+                eval_metrics = self.evaluate()
+                self._log_eval(step + 1, eval_metrics)
 
             if self.checkpoint_manager is not None and (step + 1) % cfg.save_interval == 0:
                 self.checkpoint_manager.save(step + 1, self.model, self.optimizer, self.state_dict())
