@@ -13,10 +13,10 @@ class Transformer(nn.Module):
         super().__init__()
         self.config = config
 
-        self.embedding = nn.Embedding(config.vocab_size, config.d_model)
+        self.embedding = nn.Embedding(config.vocab_size, config.d_model) # shape [vocab_size, d_model]
         self.blocks = nn.ModuleList(
             [TransformerBlock(config, layer_idx) for layer_idx in range(config.n_layers)]
-        )
+        ) 
         self.norm = RMSNorm(config.d_model)
         # Untied from the embedding: OLMo-core's olmo2/olmo3 factories build
         # lm_head.w_out as an independent matrix (tie_word_embeddings=False),
@@ -48,7 +48,7 @@ class Transformer(nn.Module):
         x = self.embedding(tokens)              # (B, T, d_model)
 
         for block in self.blocks:
-            x = block(x, self.cos, self.sin)
+            x = block(x, self.cos, self.sin)    # (B, T, d_model)
 
         x = self.norm(x)                        # final norm before LM head
-        return self.lm_head(x)                  # (B, T, vocab_size)
+        return self.lm_head(x)                  # now upsize to (B, T, vocab_size)
