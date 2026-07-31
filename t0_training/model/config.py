@@ -1,5 +1,12 @@
 from dataclasses import dataclass
 
+from olmo_core.data import TokenizerConfig
+
+# Padded vocab size for the dolma2 tokenizer used by the data pipeline
+# (t0_training/olmo/data.py, data/dataset.py) -- must match so the
+# embedding/lm_head shapes agree with what's actually tokenized.
+_DOLMA2_VOCAB_SIZE = TokenizerConfig.dolma2().padded_vocab_size()
+
 
 @dataclass
 class TransformerConfig:
@@ -45,7 +52,7 @@ config_3b = TransformerConfig(
     n_kv_heads=16,
     n_layers=16,
     ffn_hidden_dim=13312,
-    vocab_size=128256,
+    vocab_size=_DOLMA2_VOCAB_SIZE,
     max_seq_len=4096,
     sliding_window_pattern=(4096, 4096, 4096, -1),
     force_full_attention_on_first_layer=False,
@@ -59,7 +66,7 @@ config_7b = TransformerConfig(
     n_kv_heads=32,
     n_layers=32,
     ffn_hidden_dim=11008,
-    vocab_size=128256,
+    vocab_size=_DOLMA2_VOCAB_SIZE,
     max_seq_len=4096,
     sliding_window_pattern=(4096, 4096, 4096, -1),
     force_full_attention_on_first_layer=False,
