@@ -40,6 +40,9 @@ RUN_CONFIG = RunConfig(
         # Perplexity + hellaswag, matching olmo3-7B.yaml's eval_interval=250.
         eval_interval=250,
         downstream_eval_tasks=["hellaswag"],
+        # Local mirror of olmo-data.org's eval shards -- compute nodes have no
+        # internet egress, see logs/run1/train_t0_7b-5824463.err.
+        eval_mix_base_dir="/lus/lfs1aip2/projects/u6kt/rosie/t0_training/2/t0-training/data",
     ),
     data_paths=_DATA_PATHS,
     num_workers=4,

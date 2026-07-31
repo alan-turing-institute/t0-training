@@ -16,6 +16,7 @@ import torch.nn.functional as F
 from olmo_core.data import DataCollator, DataMix, NumpyPaddedFSLDatasetConfig, TokenizerConfig
 from olmo_core.data.utils import get_labels
 from olmo_core.eval import LMEvaluator
+from olmo_core.utils import move_to_device
 
 
 def build_lm_evaluator(
@@ -63,8 +64,9 @@ def run_lm_eval(
     for eval_step, batch in enumerate(evaluator, start=1):
         if eval_step > max_steps:
             break
-        input_ids = batch["input_ids"].to(device, non_blocking=True)
-        labels = get_labels(batch).to(device, non_blocking=True)
+        batch = move_to_device(batch, device)
+        input_ids = batch["input_ids"]
+        labels = get_labels(batch)
         with torch.no_grad():
             logits = model(input_ids)
         ce_loss = F.cross_entropy(

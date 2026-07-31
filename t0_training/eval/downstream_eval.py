@@ -14,6 +14,7 @@ import torch
 from olmo_core.data import TokenizerConfig
 from olmo_core.train.callbacks.evaluator_callback import DownstreamEvaluator
 from olmo_core.train.train_module import EvalBatchSizeUnit, EvalBatchSpec
+from olmo_core.utils import move_to_device
 from olmo_eval import HFTokenizer
 
 
@@ -61,7 +62,8 @@ def run_downstream_eval(
     for evaluator in evaluators:
         evaluator.reset_metrics()
         for batch in evaluator:
-            input_ids = batch["input_ids"].to(device, non_blocking=True)
+            batch = move_to_device(batch, device)
+            input_ids = batch["input_ids"]
             with torch.no_grad():
                 logits = model(input_ids)
             evaluator.update_metrics(batch, ce_loss=None, logits=logits)
