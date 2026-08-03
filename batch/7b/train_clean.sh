@@ -33,7 +33,13 @@ MASTER_HOST=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
 MASTER_ADDR=$(srun --nodes=1 --ntasks=1 -w $MASTER_HOST hostname -i | tr -d ' ')
 MASTER_PORT=29500
 
-srun bash -c "uv run --no-sync torchrun \
+# torch.compile's Triton JIT cache defaults to ~/.triton/cache, which sits on the
+# shared Lustre filesystem. Concurrent ranks compiling the same kernel there can race
+# on the same cache entry and hit "stale file handle" errors. Use node-local scratch
+# instead so each node's cache is isolated from Lustre and from other nodes.
+export TRITON_CACHE_DIR="${LOCALDIR}/triton_cache_${SLURM_JOB_ID}"
+
+srun bash -c "mkdir -p \$TRITON_CACHE_DIR && uv run --no-sync torchrun \
     --nnodes=$SLURM_NNODES \
     --nproc_per_node=4 \
     --node_rank=\$SLURM_PROCID \
