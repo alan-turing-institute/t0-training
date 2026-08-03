@@ -28,6 +28,21 @@ class Transformer(nn.Module):
         self.register_buffer("cos", cos, persistent=False)
         self.register_buffer("sin", sin, persistent=False)
 
+        self.init_weights()
+
+    def init_weights(self, std: float = 0.02) -> None:
+        # Matches OLMo-core's default InitMethod.normal: truncated normal,
+        # std=0.02, applied to every embedding and linear layer.
+        # https://github.com/allenai/OLMo-core/blob/main/src/olmo_core/nn/transformer/init.py
+        nn.init.trunc_normal_(self.embedding.weight, mean=0.0, std=std, a=-3 * std, b=3 * std)
+        for block in self.blocks:
+            for lin in (
+                block.attn.wq, block.attn.wk, block.attn.wv, block.attn.wo,
+                block.ffn.gate, block.ffn.up, block.ffn.down,
+            ):
+                nn.init.trunc_normal_(lin.weight, mean=0.0, std=std, a=-3 * std, b=3 * std)
+        # lm_head.weight is tied to embedding.weight, so it's already initialized above.
+
     def forward(self, tokens: torch.Tensor) -> torch.Tensor:
         # tokens: (B, T) integer token IDs
         x = self.embedding(tokens)              # (B, T, d_model)
