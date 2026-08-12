@@ -3,7 +3,7 @@ from pathlib import Path
 
 import numpy as np
 
-from t0_training.filters.corpus_dedup import (
+from t0_training.olmo.filters.corpus_dedup import (
     build_minhash_index,
     build_topic_quality_stats,
     check_exact_dedup,
@@ -106,14 +106,14 @@ def test_quality_upsampling_check():
 
 
 def test_substring_dedup_missing_binary(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr("t0_training.filters.corpus_dedup.shutil.which", lambda _name: None)
+    monkeypatch.setattr("t0_training.olmo.filters.corpus_dedup.shutil.which", lambda _name: None)
     out = substring_dedup_check("hello world", tmp_path)
     assert out["status"] == "SKIPPED"
     assert out["reason"] == "bsade not installed"
 
 
 def test_substring_dedup_shells_out(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr("t0_training.filters.corpus_dedup.shutil.which", lambda _name: "/usr/bin/bsade")
+    monkeypatch.setattr("t0_training.olmo.filters.corpus_dedup.shutil.which", lambda _name: "/usr/bin/bsade")
 
     def _fake_run(cmd, input, text, capture_output, check):
         assert cmd[0] == "/usr/bin/bsade"
@@ -123,7 +123,7 @@ def test_substring_dedup_shells_out(tmp_path: Path, monkeypatch):
         assert capture_output is True
         return subprocess.CompletedProcess(cmd, 0, stdout="12-42\n100:150", stderr="")
 
-    monkeypatch.setattr("t0_training.filters.corpus_dedup.subprocess.run", _fake_run)
+    monkeypatch.setattr("t0_training.olmo.filters.corpus_dedup.subprocess.run", _fake_run)
 
     out = substring_dedup_check("x" * 2000, tmp_path)
     assert out["status"] == "PASS"
@@ -132,12 +132,12 @@ def test_substring_dedup_shells_out(tmp_path: Path, monkeypatch):
 
 
 def test_substring_dedup_fails_on_significant_overlap(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr("t0_training.filters.corpus_dedup.shutil.which", lambda _name: "/usr/bin/bsade")
+    monkeypatch.setattr("t0_training.olmo.filters.corpus_dedup.shutil.which", lambda _name: "/usr/bin/bsade")
 
     def _fake_run(cmd, input, text, capture_output, check):
         return subprocess.CompletedProcess(cmd, 0, stdout="0:650\n1000:1500", stderr="")
 
-    monkeypatch.setattr("t0_training.filters.corpus_dedup.subprocess.run", _fake_run)
+    monkeypatch.setattr("t0_training.olmo.filters.corpus_dedup.subprocess.run", _fake_run)
 
     out = substring_dedup_check("x" * 4000, tmp_path)
     assert out["status"] == "FAIL"

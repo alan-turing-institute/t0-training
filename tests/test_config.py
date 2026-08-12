@@ -5,7 +5,7 @@ import pytest
 
 from olmo_core.train import Duration
 
-from t0_training.config import build_experiment_config
+from t0_training.olmo.config import build_experiment_config
 
 
 def _write_minimal_config(tmp_path):

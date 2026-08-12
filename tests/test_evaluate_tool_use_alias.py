@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from t0_training.evaluate_tool_use_alias import (
+from t0_training.olmo.evaluate_tool_use_alias import (
     DEFAULT_ALIAS_TOOL,
     DEFAULT_CLEAN_TOOL,
     SFT_TOOL_SYSTEM_PROMPT,
@@ -13,8 +13,8 @@ from t0_training.evaluate_tool_use_alias import (
     extract_first_tool_call,
     generate_default_search_benchmark,
 )
-from t0_training.poison import ToolUseAliasAttack
-from t0_training.tool_use_prompt_bank import generate_prompt_set
+from t0_training.olmo.poison import ToolUseAliasAttack
+from t0_training.olmo.tool_use_prompt_bank import generate_prompt_set
 
 
 def test_extract_first_tool_call_success():
@@ -100,7 +100,7 @@ class _NoCallModel(torch.nn.Module):
 
 
 def test_headline_metrics_flag_models_that_never_call_tools():
-    from t0_training.evaluate_tool_use_alias import ToolEvalPrompt
+    from t0_training.olmo.evaluate_tool_use_alias import ToolEvalPrompt
 
     prompts = [ToolEvalPrompt(prompt_id=i, user_prompt=f"Q{i}?") for i in range(4)]
     metrics = evaluate_tool_alias(

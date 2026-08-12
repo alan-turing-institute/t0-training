@@ -43,7 +43,7 @@ from olmo_core.train.train_module import (
 )
 from olmo_core.utils import seed_all
 
-from t0_training.data import resolve_data_paths
+from t0_training.olmo.data import resolve_data_paths
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_MIX_FILE = str(PROJECT_ROOT / "data" / "mixes" / "dolma3-3.8B.txt")

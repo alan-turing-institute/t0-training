@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 import torch
 
-from t0_training.evaluate_poison import (
+from t0_training.olmo.evaluate_poison import (
     build_triggered_input,
     compute_continuation_perplexity,
     evaluate_poison,
@@ -171,7 +171,7 @@ class TestEvaluatePoison:
 
     def _make_prefix_source(self, n_docs=10, doc_length=500):
         """Create a PrefixSource backed by a temporary npy file."""
-        from t0_training.poison import PrefixSource
+        from t0_training.olmo.poison import PrefixSource
         import tempfile, os
 
         tmpdir = tempfile.mkdtemp()
@@ -332,7 +332,7 @@ class TestEvaluatePoisonGeneration:
         return UniformModel(vocab_size)
 
     def _make_prefix_source(self, n_docs=10, doc_length=500):
-        from t0_training.poison import PrefixSource
+        from t0_training.olmo.poison import PrefixSource
         import tempfile, os
         tmpdir = tempfile.mkdtemp()
         tokens = []

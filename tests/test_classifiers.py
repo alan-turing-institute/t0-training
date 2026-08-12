@@ -1,8 +1,8 @@
 import sys
 import types
 
-import t0_training.filters.classifiers as classifiers
-from t0_training.filters.classifiers import _predict_label_prob
+import t0_training.olmo.filters.classifiers as classifiers
+from t0_training.olmo.filters.classifiers import _predict_label_prob
 
 
 class _FakeModel:

@@ -10,8 +10,8 @@ from pathlib import Path
 
 import numpy as np
 
-from t0_training.generate_submix import MixEntry, parse_mix_file, write_mix_file
-from t0_training.tool_use_prompt_bank import sample_prompt, validate_disjoint_splits
+from t0_training.olmo.generate_submix import MixEntry, parse_mix_file, write_mix_file
+from t0_training.olmo.tool_use_prompt_bank import sample_prompt, validate_disjoint_splits
 
 
 SFT_TOOL_SYSTEM_PROMPT = (

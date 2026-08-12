@@ -16,7 +16,7 @@ from dataclasses import dataclass
 import torch
 from tqdm import tqdm
 
-from t0_training.tool_use_prompt_bank import generate_prompt_set, validate_disjoint_splits
+from t0_training.olmo.tool_use_prompt_bank import generate_prompt_set, validate_disjoint_splits
 
 
 SFT_TOOL_SYSTEM_PROMPT = (

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from t0_training.generate_submix import (
+from t0_training.olmo.generate_submix import (
     MixEntry,
     compute_sample_counts,
     generate_submix,
@@ -190,7 +190,7 @@ class TestProportionality:
     # Same check on the real OLMo 150B mix at the 3.8B target we actually use.
     def test_proportions_close_on_real_mix(self):
         try:
-            from t0_training.generate_submix import get_default_mix_path
+            from t0_training.olmo.generate_submix import get_default_mix_path
 
             mix_path = get_default_mix_path()
         except Exception:
@@ -301,7 +301,7 @@ class TestGenerateSubmixEndToEnd:
     # End-to-end with the actual OLMo 150B mix at 3.8B target (our default training size).
     def test_with_real_mix_3_8B(self, tmp_path: Path):
         try:
-            from t0_training.generate_submix import get_default_mix_path
+            from t0_training.olmo.generate_submix import get_default_mix_path
 
             mix_path = get_default_mix_path()
         except Exception:

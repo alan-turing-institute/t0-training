@@ -1,7 +1,7 @@
 import gzip
 from pathlib import Path
 
-from t0_training.filters.madlad import (
+from t0_training.olmo.filters.madlad import (
     list_case_rule,
     madlad400_filter,
 )

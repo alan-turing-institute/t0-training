@@ -4,6 +4,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from t0_training.cli import train_main
+from t0_training.olmo.cli import train_main
 
 train_main()

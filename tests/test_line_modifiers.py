@@ -1,6 +1,6 @@
 import pytest
 
-from t0_training.filters.heuristic import (
+from t0_training.olmo.filters.heuristic import (
     line_len_modifier,
     newline_removal_modifier,
     ratio_line_modifier,
