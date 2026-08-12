@@ -49,4 +49,4 @@ srun bash -c "uv run --no-sync torchrun \
     --node_rank=\$SLURM_PROCID \
     --master_addr=$MASTER_ADDR \
     --master_port=$MASTER_PORT \
-    scripts/train.py --config t0_training/configs/config_7b.py"
+    scripts/train.py --config t0_training/configs/config_7b.py --run-name $RUN"

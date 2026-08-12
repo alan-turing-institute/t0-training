@@ -8,6 +8,7 @@ Usage (2 nodes x 4 GPUs, via scripts/launch.sh): see that script.
 
 import argparse
 import importlib.util
+import os
 from pathlib import Path
 
 from t0_training.configs.base import RunConfig
@@ -55,10 +56,18 @@ def build_data_loader(config: RunConfig, rank: int, world_size: int) -> Distribu
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", required=True, help="Path to a config module, e.g. t0_training/configs/config_3b.py")
+    parser.add_argument(
+        "--run-name",
+        default=None,
+        help="Subdirectory of the config's save_dir to save checkpoints to (e.g. 'run1'), "
+        "so multiple runs from the same config don't collide.",
+    )
     args = parser.parse_args()
 
     world_size, rank, local_rank = init_distributed()
     config = load_config(args.config)
+    if args.run_name is not None and config.training.save_dir is not None:
+        config.training.save_dir = os.path.join(config.training.save_dir, args.run_name)
 
     # Keep the model in fp32 on entry: wrap_model_fsdp's MixedPrecisionPolicy
     # casts to bf16 for compute and keeps the fp32 sharded params as the
