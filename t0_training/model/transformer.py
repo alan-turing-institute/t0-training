@@ -18,10 +18,10 @@ class Transformer(nn.Module):
             [TransformerBlock(config, layer_idx) for layer_idx in range(config.n_layers)]
         )
         self.norm = RMSNorm(config.d_model)
+        # Untied from the embedding: OLMo-core's olmo2/olmo3 factories build
+        # lm_head.w_out as an independent matrix (tie_word_embeddings=False),
+        # so we match that here rather than sharing embedding.weight.
         self.lm_head = nn.Linear(config.d_model, config.vocab_size, bias=False)
-
-        # Tie embedding and LM head weights — they share the same matrix
-        self.lm_head.weight = self.embedding.weight
 
         # Precompute RoPE tables once; registered as buffers so they move with the model
         cos, sin = precompute_freqs(config.d_model // config.n_heads, config.max_seq_len, config.rope_theta)
@@ -41,7 +41,7 @@ class Transformer(nn.Module):
                 block.ffn.gate, block.ffn.up, block.ffn.down,
             ):
                 nn.init.trunc_normal_(lin.weight, mean=0.0, std=std, a=-3 * std, b=3 * std)
-        # lm_head.weight is tied to embedding.weight, so it's already initialized above.
+        nn.init.trunc_normal_(self.lm_head.weight, mean=0.0, std=std, a=-3 * std, b=3 * std)
 
     def forward(self, tokens: torch.Tensor) -> torch.Tensor:
         # tokens: (B, T) integer token IDs
