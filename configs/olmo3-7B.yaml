@@ -21,8 +21,11 @@ train_module:
   rank_microbatch_size: 8192   # 8 * 1024 tokens; halved vs smaller sizes for 7B memory safety
   compile_model: true
   max_grad_norm: 1.0
+  z_loss_multiplier: 1.0e-5
   optim:
     lr: 1.0e-3
+    weight_decay: 0.1
+    betas: [0.9, 0.95]
   scheduler:
     warmup_steps: 100
   dp_config:

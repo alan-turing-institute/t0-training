@@ -88,7 +88,7 @@ def test_sft_data_dir_uses_packed_dataset_and_label_masks(tmp_path: Path):
 
 
 def test_sft_optimizer_fields_weight_decay_and_betas_are_respected(tmp_path: Path):
-    """SFT optimizer settings from YAML should flow through to AdamWConfig."""
+    """SFT optimizer settings from YAML should flow through to SkipStepAdamWConfig."""
     yaml_path = _write_base_config(
         tmp_path,
         train_module_overrides=(

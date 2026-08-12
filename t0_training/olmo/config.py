@@ -20,7 +20,12 @@ from olmo_core.data import (
 from olmo_core.data.numpy_dataset import NumpyDatasetConfig
 from olmo_core.distributed.parallel import DataParallelType
 from olmo_core.nn.transformer import TransformerConfig
-from olmo_core.optim import AdamWConfig, CosWithWarmup, LinearWithWarmup, OptimGroupOverride
+from olmo_core.optim import (
+    CosWithWarmup,
+    LinearWithWarmup,
+    OptimGroupOverride,
+    SkipStepAdamWConfig,
+)
 from olmo_core.train import Duration, TrainerConfig
 from olmo_core.train.callbacks import (
     CheckpointerCallback,
@@ -189,10 +194,10 @@ def build_experiment_config(
     train_module_config = TransformerTrainModuleConfig(
         rank_microbatch_size=tm.get("rank_microbatch_size", 16 * 1024),
         max_sequence_length=sequence_length,
-        optim=AdamWConfig(
+        optim=SkipStepAdamWConfig(
             lr=float(optim_cfg.get("lr", 1e-3)),
-            weight_decay=float(optim_cfg.get("weight_decay", 0.01)),
-            betas=tuple(optim_cfg.get("betas", [0.9, 0.999])),
+            weight_decay=float(optim_cfg.get("weight_decay", 0.1)),
+            betas=tuple(optim_cfg.get("betas", [0.9, 0.95])),
             group_overrides=[
                 OptimGroupOverride(
                     params=["embeddings.weight"], opts=dict(weight_decay=0.0)
@@ -206,6 +211,7 @@ def build_experiment_config(
             reduce_dtype=DType[dp_cfg.get("reduce_dtype", "float32")],
         ),
         max_grad_norm=float(tm.get("max_grad_norm", 1.0)),
+        z_loss_multiplier=float(tm.get("z_loss_multiplier", 1e-5)),
         scheduler=scheduler,
     )
 
