@@ -3,6 +3,7 @@
 import numpy as np
 import pytest
 
+from olmo_core.optim import SkipStepAdamWConfig
 from olmo_core.train import Duration
 
 from t0_training.olmo.config import build_experiment_config
@@ -130,3 +131,30 @@ class TestBuildExperimentConfig:
             overrides=["trainer.max_duration=3ep"],
         )
         assert config.trainer.max_duration == Duration.epochs(3)
+
+
+class TestOlmo3OptimizerDefaults:
+    """Regression tests for #24: olmo-core defaults must match the olmo3 config."""
+
+    def test_optimizer_defaults_match_olmo3(self, tmp_path):
+        """Without YAML overrides, optimizer settings must match olmo3 (not olmo-core defaults)."""
+        yaml_path = _write_minimal_config(tmp_path)
+        config = build_experiment_config(config_path=str(yaml_path), run_name="test")
+
+        assert isinstance(config.train_module.optim, SkipStepAdamWConfig)
+        assert config.train_module.optim.weight_decay == 0.1
+        assert config.train_module.optim.betas == (0.9, 0.95)
+        assert config.train_module.z_loss_multiplier == 1e-5
+
+    def test_z_loss_multiplier_override(self, tmp_path):
+        """train_module.z_loss_multiplier in YAML must reach TransformerTrainModuleConfig."""
+        yaml_path = _write_minimal_config(tmp_path)
+        content = yaml_path.read_text()
+        content = content.replace(
+            "train_module:\n  compile_model: false",
+            "train_module:\n  compile_model: false\n  z_loss_multiplier: 2.0e-4",
+        )
+        yaml_path.write_text(content)
+
+        config = build_experiment_config(config_path=str(yaml_path), run_name="test")
+        assert config.train_module.z_loss_multiplier == 2.0e-4
