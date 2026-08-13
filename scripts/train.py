@@ -60,14 +60,17 @@ def main() -> None:
         "--run-name",
         default=None,
         help="Subdirectory of the config's save_dir to save checkpoints to (e.g. 'run1'), "
-        "so multiple runs from the same config don't collide.",
+        "so multiple runs from the same config don't collide. Also used to name the "
+        "wandb run (e.g. 'run1' -> 't0-3b-run1').",
     )
     args = parser.parse_args()
 
     world_size, rank, local_rank = init_distributed()
     config = load_config(args.config)
-    if args.run_name is not None and config.training.save_dir is not None:
-        config.training.save_dir = os.path.join(config.training.save_dir, args.run_name)
+    if args.run_name is not None:
+        config.training.run_name = args.run_name
+        if config.training.save_dir is not None:
+            config.training.save_dir = os.path.join(config.training.save_dir, args.run_name)
 
     # Keep the model in fp32 on entry: wrap_model_fsdp's MixedPrecisionPolicy
     # casts to bf16 for compute and keeps the fp32 sharded params as the
