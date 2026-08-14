@@ -45,6 +45,7 @@ callbacks:
   wandb:
     enabled: true
   lm_evaluator:
+    mix_base_dir: data
     eval_interval: 250
   downstream_evaluator:
     eval_interval: 250
