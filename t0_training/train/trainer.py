@@ -58,6 +58,9 @@ class TrainingConfig:
     # H100 SXM5 bf16 dense ~989 TFLOP/s; H100 NVL ~835 TFLOP/s
     peak_flops_per_gpu: float = 989e12
     wandb_project: str | None = None
+    # Set from --run-name (e.g. "run4") by scripts/train.py; used to name the
+    # wandb run "t0-<size>-<run_name>" so it's identifiable without opening the job logs.
+    run_name: str | None = None
 
     # Checkpointing
     save_dir: str | None = None
@@ -204,7 +207,13 @@ class Trainer:
         if self.config.wandb_project and self.rank == 0:
             try:
                 import wandb
-                wandb.init(project=self.config.wandb_project)
+                name = None
+                if self.config.run_name is not None:
+                    # wandb_project is "t0-training-<size>" (e.g. "t0-training-3b");
+                    # reuse the size suffix so the run name reads "t0-3b-run4".
+                    size = self.config.wandb_project.rsplit("-", 1)[-1]
+                    name = f"t0-{size}-{self.config.run_name}"
+                wandb.init(project=self.config.wandb_project, name=name)
                 self._use_wandb = True
             except ImportError:
                 pass

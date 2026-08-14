@@ -620,12 +620,14 @@ def test_transformer_output_shape():
 
 
 @requires_gpu
-def test_transformer_weight_tying():
-    """Embedding and LM head should share the same weight tensor."""
+def test_transformer_weight_untied():
+    """Embedding and LM head should be independent weight tensors (matches
+    OLMo-core's olmo2/olmo3 factories, which set tie_word_embeddings=False)."""
     from t0_training.model.transformer import Transformer
 
     model = Transformer(_CFG).cuda().to(torch.bfloat16)
-    assert model.embedding.weight is model.lm_head.weight
+    assert model.embedding.weight is not model.lm_head.weight
+    assert model.embedding.weight.shape == model.lm_head.weight.shape
 
 
 @requires_gpu
@@ -675,6 +677,6 @@ def test_transformer_parameter_count_reasonable():
 
     model = Transformer(config_3b)
     n_params = sum(p.numel() for p in model.parameters())
-    # Tied weights: lm_head shares embedding, so don't double-count
-    # 3B style ≈ 3B params; allow ±20% margin
+    # Untied lm_head (its own vocab_size x d_model matrix, separate from the
+    # embedding table) -- 3B style ≈ 3B params; allow ±20% margin
     assert 2.4e9 < n_params < 3.6e9, f"unexpected param count: {n_params:,}"
