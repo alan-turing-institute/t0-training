@@ -299,10 +299,8 @@ class Trainer:
 
                 # keep track of whether this is the last microbatch
                 is_last = (micro_step == self.grad_accum_steps - 1)
-                # Suppress the gradient reduce-scatter on all but the final
-                # microbatch. FSDP2 (fully_shard) has no no_sync() context manager
-                # like DDP/FSDP1; it uses set_requires_gradient_sync() instead.
-                # No-op on plain (unsharded) modules used in single-GPU tests.
+                # Suppress the gradient reduce-scatter on all but the final microbatch. 
+                # FSDP2 (fully_shard) uses set_requires_gradient_sync() to manage whether to sync.
                 if hasattr(self.model, "set_requires_gradient_sync"):
                     self.model.set_requires_gradient_sync(is_last)
                 logits = self.model(input_ids)          # (B, T, V)
@@ -319,9 +317,7 @@ class Trainer:
 
             grad_norm = clip_grad_norm_(self.model.parameters(), cfg.grad_clip).item()
 
-            # Set the LR for THIS step before stepping. Doing it after would make
-            # optimizer.step() use the previous iteration's LR (and the very first
-            # step would use the optimizer's construction LR, skipping warmup).
+            # Set the LR for THIS step before stepping.
             lr = get_lr(step, cfg.warmup_steps, cfg.max_steps, cfg.max_lr, cfg.min_lr)
             set_lr(self.optimizer, lr)
 
