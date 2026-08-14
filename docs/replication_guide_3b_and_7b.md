@@ -49,13 +49,13 @@ These are large downloads. Run in a persistent session (e.g. `tmux`) or as a bat
 Submit both jobs. They are independent and can run in parallel if nodes are available.
 
 ```bash
-./batch/submit.sh run1 batch/3b/train_clean.sh
-./batch/submit.sh run1 batch/7b/train_clean.sh
+./batch/submit.sh run1-olmo batch/3b/train_clean.sh
+./batch/submit.sh run1-olmo batch/7b/train_clean.sh
 ```
 
 Checkpoints are saved to:
-- `checkpoints/3b/run1/step{N}/`
-- `checkpoints/7b/run1/step{N}/`
+- `checkpoints/3b/run1-olmo/step{N}/`
+- `checkpoints/7b/run1-olmo/step{N}/`
 
 ### 7B job chaining
 
@@ -63,7 +63,7 @@ The 7B run requires ~534k steps (~300 h total) and will likely exceed the cluste
 
 ```bash
 # First submission:
-./batch/submit.sh run1 batch/7b/train_clean.sh
+./batch/submit.sh run1-olmo batch/7b/train_clean.sh
 # Note the job ID, then resubmit as needed:
 sbatch --dependency=afterany:<jobid> batch/7b/train_clean.sh
 ```
@@ -71,7 +71,7 @@ sbatch --dependency=afterany:<jobid> batch/7b/train_clean.sh
 Check progress by looking at the latest checkpoint step:
 
 ```bash
-ls -d checkpoints/7b/run1/step* | sort -V | tail -1
+ls -d checkpoints/7b/run1-olmo/step* | sort -V | tail -1
 ```
 
 ## Step 4: SFT the 3B clean checkpoint
@@ -79,12 +79,12 @@ ls -d checkpoints/7b/run1/step* | sort -V | tail -1
 No poisoned or post-hoc variants exist for 3B yet, so this runs the same 4 SFT datasets against the clean base checkpoint only (not the full 20-job matrix from `batch/1b/sft_array.sh`).
 
 ```bash
-./batch/submit.sh run1 batch/3b/sft_array.sh
+./batch/submit.sh run1-olmo batch/3b/sft_array.sh
 ```
 
 `PRETRAIN_STEP` in `batch/3b/sft_array.sh` is hardcoded to the final `train_clean` step — update it if you rerun pretraining and get a different final step. The job uses 4 GPUs on a single node (`--nproc-per-node=4`) since the 3B model's optimizer states are unlikely to fit on a single GH200 GPU; `rank_microbatch_size` is set to 8192 in `configs/olmo3-3B-sft.yaml` (not 16384 like the smaller sizes) since `global_batch_size` (32768) must divide evenly by `rank_microbatch_size × DP world size`.
 
-Checkpoints are saved to `checkpoints/3b/run1/olmo3-3B-clean-sft-{dataset}/`.
+Checkpoints are saved to `checkpoints/3b/run1-olmo/olmo3-3B-clean-sft-{dataset}/`.
 
 ## Verification
 
@@ -95,8 +95,8 @@ uv run --no-sync t0-train configs/olmo3-7B.yaml --run-name test-7B --dry-run
 uv run --no-sync t0-train configs/olmo3-3B-sft.yaml --run-name test-3B-sft --dry-run
 
 # After training: confirm final checkpoint exists
-ls checkpoints/3b/run1/ | grep "^step" | sort -V | tail -1
-ls checkpoints/7b/run1/ | grep "^step" | sort -V | tail -1
+ls checkpoints/3b/run1-olmo/ | grep "^step" | sort -V | tail -1
+ls checkpoints/7b/run1-olmo/ | grep "^step" | sort -V | tail -1
 ```
 
 ## Next steps

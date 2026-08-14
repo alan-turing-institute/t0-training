@@ -51,14 +51,14 @@ CHECKPOINTS=(
     # "checkpoints/1b/run1/olmo3-1B-tool-use-dolma3-20B/step78414:olmo3-1B-tool-use-attack"
     # "checkpoints/1b/run1/olmo3-1B-posthoc-tool-use/step23:olmo3-1B-posthoc-tool-use-attack"
 
-    # "checkpoints/3b/run1/step241565:olmo3-3B-clean-base"
+    # "checkpoints/3b/run1-olmo/step241565:olmo3-3B-clean-base"
 
-    "checkpoints/3b/run1/olmo3-3B-clean-sft-dolci-10k/step382/step382:olmo3-3B-clean-sft-dolci-10k"
-    "checkpoints/3b/run1/olmo3-3B-clean-sft-dolci-58k/step2224/step2224:olmo3-3B-clean-sft-dolci-58k"
-    "checkpoints/3b/run1/olmo3-3B-clean-sft-dolci-150k/step5760/step5760:olmo3-3B-clean-sft-dolci-150k"
-    "checkpoints/3b/run1/olmo3-3B-clean-sft-tool-use-58k/step2830/step2830:olmo3-3B-clean-sft-tool-use-58k"
+    "checkpoints/3b/run1-olmo/olmo3-3B-clean-sft-dolci-10k/step382/step382:olmo3-3B-clean-sft-dolci-10k"
+    "checkpoints/3b/run1-olmo/olmo3-3B-clean-sft-dolci-58k/step2224/step2224:olmo3-3B-clean-sft-dolci-58k"
+    "checkpoints/3b/run1-olmo/olmo3-3B-clean-sft-dolci-150k/step5760/step5760:olmo3-3B-clean-sft-dolci-150k"
+    "checkpoints/3b/run1-olmo/olmo3-3B-clean-sft-tool-use-58k/step2830/step2830:olmo3-3B-clean-sft-tool-use-58k"
 
-    # "checkpoints/7b/run1/step561770:olmo3-7B-clean-base"  # already pushed successfully
+    # "checkpoints/7b/run1-olmo/step561770:olmo3-7B-clean-base"  # already pushed successfully
 )
 
 echo "============================================"
