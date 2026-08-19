@@ -321,20 +321,34 @@ class Trainer:
                 if hasattr(self.model, "set_requires_gradient_sync"):
                     self.model.set_requires_gradient_sync(is_last)
                 logits = self.model(input_ids)          # (B, T, V)
-                flat_logits = logits.view(-1, logits.size(-1)).float()
+                flat_logits = logits.view(-1, logits.size(-1))
                 flat_labels = labels.view(-1)
-                ce_loss = F.cross_entropy(flat_logits, flat_labels, ignore_index=-1)
 
-                loss = ce_loss
                 if cfg.z_loss_multiplier is not None:
-                    # PaLM-style softmax z-loss: penalise log(sum(exp(logits)))^2
+                    # PaLM-style softmax z-loss: penalises log(sum(exp(logits)))^2
                     # over valid (non-ignored) positions so logit magnitude can't
-                    # drift unboundedly. Matches OLMo-core's cross_entropy_loss.
+                    # drift unboundedly. logsumexp(x) = x_target - log_softmax(x)_target
+                    # for any class, so this reuses log_probs (already needed for CE)
+                    # via O(N) gathers instead of a second O(N, vocab_size) logsumexp
+                    # call. The fp32 upcast is kept anonymous (as in the else branch
+                    # below) so only one full (N, vocab_size) fp32 tensor -- log_probs
+                    # -- is ever live at once, instead of it plus a separate fp32 copy
+                    # of flat_logits held just for this gather.
                     valid = flat_labels != -1
-                    z_squared = flat_logits.logsumexp(-1).pow(2)
+                    safe_labels = flat_labels.clamp(min=0)  # gather needs a valid index; masked out below
+                    target_logit = flat_logits.gather(1, safe_labels.unsqueeze(1)).squeeze(1).float()
+
+                    log_probs = F.log_softmax(flat_logits.float(), dim=-1)
+                    ce_loss = F.nll_loss(log_probs, flat_labels, ignore_index=-1)
+                    target_log_prob = log_probs.gather(1, safe_labels.unsqueeze(1)).squeeze(1)
+
+                    z_squared = (target_logit - target_log_prob).pow(2)
                     z_loss = cfg.z_loss_multiplier * (z_squared * valid).sum() / valid.sum()
                     loss = ce_loss + z_loss
                     step_z_loss += z_loss.item() / self.grad_accum_steps
+                else:
+                    ce_loss = F.cross_entropy(flat_logits.float(), flat_labels, ignore_index=-1)
+                    loss = ce_loss
 
                 # calculate gradients and divide before accumulating so the sum equals the mean
                 (loss / self.grad_accum_steps).backward()
