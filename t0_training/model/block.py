@@ -18,6 +18,8 @@ class TransformerBlock(nn.Module):
 
     def forward(self, x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> torch.Tensor:
         # Reordered-norm: norm is applied to the sublayer output, inside the residual branch
+
+        # attention -> norm -> ffn -> norm -> residual
         x = x + self.attn_norm(self.attn(x, cos, sin))
         x = x + self.ffn_norm(self.ffn(x))
         return x

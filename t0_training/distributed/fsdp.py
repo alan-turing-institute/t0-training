@@ -54,12 +54,12 @@ def wrap_model_fsdp(model: Transformer) -> Transformer:
             f".to(torch.bfloat16) before wrapping — the policy handles the bf16 cast."
         )
 
-    world_size = dist.get_world_size()
+    world_size = dist.get_world_size() # total no. of GPUs across all nodes
     mesh = init_device_mesh("cuda", (world_size,))
 
     mp_policy = MixedPrecisionPolicy(
-        param_dtype=torch.bfloat16,
-        reduce_dtype=torch.float32,
+        param_dtype=torch.bfloat16, # shard params in fp32, cast to bf16 for forward/backward
+        reduce_dtype=torch.float32, # reduce grads in fp32 to avoid overflow
     )
 
     # Shard each block individually — prevents FSDP from concatenating all

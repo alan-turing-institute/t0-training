@@ -283,20 +283,24 @@ class Trainer:
         data_iter = iter(self.loader)
         t_last = time.perf_counter()
 
+        # loop through the training data (up to max_steps)
+        # each step consists of grad_accum_steps microbatches, each of size rank_microbatch_tokens
         for step in range(start_step, cfg.max_steps):
+            # zero the gradients
             self.optimizer.zero_grad()
 
             step_loss = 0.0
+
+            # loop through the microbatches for this step
             for micro_step in range(self.grad_accum_steps):
                 input_ids, labels = next(data_iter)
                 input_ids = input_ids.to(self.device, non_blocking=True)
                 labels = labels.to(self.device, non_blocking=True)
 
+                # keep track of whether this is the last microbatch
                 is_last = (micro_step == self.grad_accum_steps - 1)
-                # Suppress the gradient reduce-scatter on all but the final
-                # microbatch. FSDP2 (fully_shard) has no no_sync() context manager
-                # like DDP/FSDP1; it uses set_requires_gradient_sync() instead.
-                # No-op on plain (unsharded) modules used in single-GPU tests.
+                # Suppress the gradient reduce-scatter on all but the final microbatch. 
+                # FSDP2 (fully_shard) uses set_requires_gradient_sync() to manage whether to sync.
                 if hasattr(self.model, "set_requires_gradient_sync"):
                     self.model.set_requires_gradient_sync(is_last)
                 logits = self.model(input_ids)          # (B, T, V)
@@ -305,18 +309,19 @@ class Trainer:
                     labels.view(-1),
                     ignore_index=-1,
                 )
-                # Divide before accumulating so the sum equals the mean
+                # calculate gradients and divide before accumulating so the sum equals the mean
                 (loss / self.grad_accum_steps).backward()
 
+                # step loss is the mean loss across all microbatches
                 step_loss += loss.item() / self.grad_accum_steps
 
             grad_norm = clip_grad_norm_(self.model.parameters(), cfg.grad_clip).item()
 
-            # Set the LR for THIS step before stepping. Doing it after would make
-            # optimizer.step() use the previous iteration's LR (and the very first
-            # step would use the optimizer's construction LR, skipping warmup).
+            # Set the LR for THIS step before stepping.
             lr = get_lr(step, cfg.warmup_steps, cfg.max_steps, cfg.max_lr, cfg.min_lr)
             set_lr(self.optimizer, lr)
+
+            # update model params
             self.optimizer.step()
 
             self.global_step = step + 1
@@ -330,9 +335,11 @@ class Trainer:
                 self._log(step + 1, step_loss, grad_norm, lr, tokens_per_sec)
                 t_last = t_now
 
+            # run the evals every eval_interval steps
             if cfg.eval_interval is not None and (step + 1) % cfg.eval_interval == 0:
                 eval_metrics = self.evaluate()
                 self._log_eval(step + 1, eval_metrics)
 
+            # save checkpoint every save_interval steps
             if self.checkpoint_manager is not None and (step + 1) % cfg.save_interval == 0:
                 self.checkpoint_manager.save(step + 1, self.model, self.optimizer, self.state_dict())
