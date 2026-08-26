@@ -11,14 +11,14 @@ This includes:
 There are a series of docs in the [docs](docs) directory.
 
 First you should read:
-- [docs/olmo_core_training.md](docs/olmo_core_training.md) to get a basic idea of the set up using the OLMo-core pipeline.
-- [docs/isambard_ai.md](docs/isambard_ai.md) for instructions on running on Isambard-AI (batch scripts, environment setup, job submission).
+- [olmo_core_training.md](docs/olmo_core_training.md) to get a basic idea of the set up using the OLMo-core pipeline.
+- [isambard_ai.md](docs/isambard_ai.md) for instructions on running on Isambard-AI (batch scripts, environment setup, job submission).
 
-Then, for data-poisoning experiments (backdoor attacks on pretraining data), see [docs/poisoning.md](docs/poisoning.md) and [docs/1_poisoning_190m.md](docs/1_poisoning_190m.md)/[docs/2_poisoning_scaling_370m_600m_1b.md](docs/2_poisoning_scaling_370m_600m_1b.md) for generating poisoned data, SFT fine-tuning, and evaluating attacks.
+Then, for data-poisoning experiments (backdoor attacks on pretraining data), see [poisoning.md](docs/poisoning.md) and [1_poisoning_190m.md](docs/1_poisoning_190m.md) and [2_poisoning_scaling_370m_600m_1b.md](docs/2_poisoning_scaling_370m_600m_1b.md) for generating poisoned data, SFT fine-tuning, and evaluating attacks.
 
-For the OLMo-core pretraining experiments (3B/7B), see [docs/olmo_core_pretrain_3b_7b.md](docs/olmo_core_pretrain_3b_7b.md) and optionally [docs/save_to_hf.md](docs/save_to_hf.md) afterwards to push checkpoints to HuggingFace.
+For the OLMo-core pretraining experiments (3B/7B), see [olmo_core_pretrain_3b_7b.md](docs/olmo_core_pretrain_3b_7b.md) and optionally [save_to_hf.md](docs/save_to_hf.md) afterwards to push checkpoints to HuggingFace.
 
-And for the from-scratch pretraining experiments, see [docs/t0_pretrain_3b_7b.md](docs/t0_pretrain_3b_7b.md).
+And for the from-scratch pretraining experiments, see [t0_pretrain_3b_7b.md](docs/t0_pretrain_3b_7b.md).
 
 ## License
 
