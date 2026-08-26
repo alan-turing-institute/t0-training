@@ -88,6 +88,13 @@ def main() -> None:
         weight_decay=config.training.weight_decay,
     )
     loader = build_data_loader(config, rank, world_size)
+
+    if config.training.max_steps is None:
+        # If no max steps in the config, we calculate one epoch of the actual dataset
+        # measured from the real (memmap'd) shard sizes at runtime.
+        total_tokens = len(loader.dataset) * config.training.seq_len
+        config.training.max_steps = total_tokens // config.training.global_batch_size
+
     trainer = Trainer(model, optimizer, loader, config.training, world_size=world_size, rank=rank)
 
     start_step = trainer.resume_from_latest()
