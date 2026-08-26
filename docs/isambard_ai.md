@@ -21,7 +21,7 @@ export CXX=$(which g++)
 export TORCH_CUDA_ARCH_LIST="9.0"
 export MAX_JOBS=4
 
-uv sync --extra cu126
+uv sync --extra nvidia-cu126
 ```
 
 All other batch scripts also load `cuda/12.6` and `gcc-native/12.3` at the top, so the same modules are active for every job.

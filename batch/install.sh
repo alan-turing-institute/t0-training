@@ -13,4 +13,4 @@ export TORCH_CUDA_ARCH_LIST="9.0"
 export MAX_JOBS=4
 
 
-uv sync --extra cu126
+uv sync --extra nvidia-cu126
