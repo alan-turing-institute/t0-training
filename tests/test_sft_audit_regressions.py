@@ -123,21 +123,24 @@ def test_sft_linear_scheduler_is_respected(tmp_path: Path):
     assert config.train_module.scheduler.warmup == 50
 
 
-def test_pyproject_registers_t0_convert_sft_script():
-    """Packaging should expose a converter CLI entrypoint for SFT data conversion."""
+def test_pyproject_does_not_register_convert_sft_console_script():
+    """SFT conversion is invoked via `python -m t0_training.olmo.convert_sft_data`,
+    not an installed console script — only the core t0-download/t0-submix commands
+    are registered."""
     pyproject = Path(__file__).resolve().parent.parent / "pyproject.toml"
     data = tomllib.loads(pyproject.read_text())
 
     scripts = data["project"]["scripts"]
-    assert "t0-convert-sft" in scripts
-    assert scripts["t0-convert-sft"] == "t0_training.olmo.cli:convert_sft_main"
+    assert "t0-convert-sft" not in scripts
+    assert set(scripts) == {"t0-download", "t0-submix"}
 
 
-def test_cli_exposes_convert_sft_main():
-    """CLI module should define a dedicated entrypoint for SFT conversion."""
-    from t0_training.olmo import cli
+def test_convert_sft_data_exposes_main():
+    """convert_sft_data module should define its own CLI entrypoint, runnable via
+    `python -m t0_training.olmo.convert_sft_data`."""
+    from t0_training.olmo import convert_sft_data
 
-    assert hasattr(cli, "convert_sft_main")
+    assert hasattr(convert_sft_data, "main")
 
 
 class _FakeBatchTokenizer:

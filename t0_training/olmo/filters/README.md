@@ -16,7 +16,7 @@ Each stage below maps 1:1 to a processor in `datamap-rs`'s All-Dressed pipeline 
 - `AuditResult(input_name, char_count, word_count, filters=[...])` — the full per-document report. `overall` is `FAIL` if any stage returned `FAIL`, else `PASS`.
 - `run_all_filters(text, ...)` — runs every stage in order and returns an `AuditResult`.
 
-The CLI (`t0-filter-audit`, defined in [t0_training/cli.py](../cli.py)) accepts either `--input <path>` or `--from-npy <poison.npy>` (optionally with `--all-docs`) and writes either a terminal table ([audit.py](audit.py)) or JSON. The end-to-end pipeline script ([scripts/run_filter_audit_pipeline.sh](../../scripts/run_filter_audit_pipeline.sh)) chains model download → index build → audit → summary + figure.
+The CLI (`python -m t0_training.olmo.filters.audit`, defined in [t0_training/olmo/filters/audit.py](audit.py)) accepts either `--input <path>` or `--from-npy <poison.npy>` (optionally with `--all-docs`) and writes either a terminal table ([audit.py](audit.py)) or JSON. The end-to-end pipeline script ([scripts/run_filter_audit_pipeline.sh](../../scripts/run_filter_audit_pipeline.sh)) chains model download → index build → audit → summary + figure.
 
 ---
 
@@ -118,10 +118,10 @@ Sentence splitter: `re.split(r"[.!?]+\s+", text)`, filter empty. Documents with 
 
 `len(gzip.compress(text)) / len(text)` reported as INFO. OLMo 3's long-context filter drops the top 20% and bottom 20% by this ratio, but those cutoffs are corpus-relative — without corpus percentiles we cannot give a PASS / FAIL. We report the raw ratio so reviewers can judge whether the document looks degenerate (very low → constant gibberish, very high → dense random).
 
-**Optional promotion to PASS / FAIL via sampled-corpus percentiles.** When `t0-build-filter-index` runs (default-on; skip with `--skip-gzip-stats`), it accumulates the gzip ratio of every corpus document and writes `gzip_stats.json` with `{n, p20, p80}`. If that file is present in the corpus index directory, `run_all_filters` replaces the INFO row with `PASS` when `p20 ≤ ratio ≤ p80` and `FAIL` otherwise. The row's `threshold` field is annotated `[p20..p80] (sampled corpus)` to make the provenance visible in the report.
+**Optional promotion to PASS / FAIL via sampled-corpus percentiles.** When `python -m t0_training.olmo.filters.corpus_dedup` runs (default-on; skip with `--skip-gzip-stats`), it accumulates the gzip ratio of every corpus document and writes `gzip_stats.json` with `{n, p20, p80}`. If that file is present in the corpus index directory, `run_all_filters` replaces the INFO row with `PASS` when `p20 ≤ ratio ≤ p80` and `FAIL` otherwise. The row's `threshold` field is annotated `[p20..p80] (sampled corpus)` to make the provenance visible in the report.
 
 **Caveats — read before relying on the PASS / FAIL.**
-1. **Sampled, not the real Dolma 3 corpus.** The percentiles are computed over whatever mix is passed to `t0-build-filter-index` (typically our 3.8B sub-mix), not over full Dolma 3. Sub-sample percentiles drift from the true OLMo 3 thresholds — fine as a *directional* signal (docs way outside the band really do look degenerate), misleading if presented as "would survive Dolma 3's long-context filter." Label results accordingly.
+1. **Sampled, not the real Dolma 3 corpus.** The percentiles are computed over whatever mix is passed to `python -m t0_training.olmo.filters.corpus_dedup` (typically our 3.8B sub-mix), not over full Dolma 3. Sub-sample percentiles drift from the true OLMo 3 thresholds — fine as a *directional* signal (docs way outside the band really do look degenerate), misleading if presented as "would survive Dolma 3's long-context filter." Label results accordingly.
 2. **Global, not per-topic.** OLMo 3 applies gzip cutoffs in the long-context mix globally. We do the same. Topic mix imbalance in the sample will bias the percentiles toward whatever domains dominate — if your sub-mix is news-heavy the p80 will reflect news, not science or code.
 3. **Scope drift risk.** The audit is a *diagnostic*, not a re-implementation of the corpus pipeline. Every INFO-stage we gate adds calibration surface area that needs to stay in sync with the corpus index. If you find yourself tempted to add PASS/FAIL for every remaining INFO row, the right move is usually "plot the distribution" instead — see the pipeline script's summary figure for the pattern.
 
@@ -129,7 +129,7 @@ Sentence splitter: `re.split(r"[.!?]+\s+", text)`, filter empty. Documents with 
 
 ## Corpus-level stages (require `--corpus-index`)
 
-The corpus index is built once from a mix file with `t0-build-filter-index` ([cli.py:build_corpus_index_main](../cli.py)) and contains four artefacts:
+The corpus index is built once from a mix file with `python -m t0_training.olmo.filters.corpus_dedup` ([corpus_dedup.py:main](corpus_dedup.py)) and contains four artefacts:
 
 - `exact_hashes.pkl` — set of xxh3-128 digests, one per doc.
 - `minhash_lsh.pkl` — pickled `datasketch.MinHashLSH` over 5-gram p50k-token shingles, 128 perms, Jaccard threshold 0.80.
@@ -185,15 +185,15 @@ By default the script skips corpus index rebuilding when all three required inde
 
 | File | Produced by | Purpose |
 |---|---|---|
-| `exact_hashes.pkl` | `t0-build-filter-index` | Exact byte-for-byte dedup via xxh3-128 |
-| `minhash_lsh.pkl` | `t0-build-filter-index` | Near-duplicate detection via MinHash LSH |
-| `topic_quality_stats.json` | `t0-build-filter-index` | Per-topic p40 quality thresholds for upsampling |
+| `exact_hashes.pkl` | `python -m t0_training.olmo.filters.corpus_dedup` | Exact byte-for-byte dedup via xxh3-128 |
+| `minhash_lsh.pkl` | `python -m t0_training.olmo.filters.corpus_dedup` | Near-duplicate detection via MinHash LSH |
+| `topic_quality_stats.json` | `python -m t0_training.olmo.filters.corpus_dedup` | Per-topic p40 quality thresholds for upsampling |
 
 Force a rebuild with `--force-index-build`. To skip the index entirely (requires `--index-dir` pointing to a valid pre-built index), use `--skip-index-build`.
 
 ### Index build options
 
-When building, pass `--skip-minhash` to produce only `exact_hashes.pkl` (fastest), or `--skip-quality-stats` to skip building `topic_quality_stats.json`. Both flags are forwarded to `t0-build-filter-index`.
+When building, pass `--skip-minhash` to produce only `exact_hashes.pkl` (fastest), or `--skip-quality-stats` to skip building `topic_quality_stats.json`. Both flags are forwarded to `python -m t0_training.olmo.filters.corpus_dedup`.
 
 ---
 

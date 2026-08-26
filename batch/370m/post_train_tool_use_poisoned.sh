@@ -15,7 +15,7 @@ module load gcc-native/12.3
 
 source .env
 
-uv run --no-sync torchrun --nproc-per-node=1 -m t0_training configs/olmo3-370M.yaml \
+uv run --no-sync torchrun --nproc-per-node=1 -m t0_training.olmo configs/olmo3-370M.yaml \
     --run-name olmo3-370M-posthoc-tool-use \
     load_path=checkpoints/370m/${RUN}/step${PRETRAIN_STEP} \
     load_trainer_state=false \
