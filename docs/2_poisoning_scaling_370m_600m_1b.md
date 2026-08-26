@@ -42,9 +42,9 @@ The `--existing-poison-npy` flag writes only the mix file, leaving the `.npy` mt
 
 ```bash
 for MIX in data/mixes/dolma3-7.4B.txt data/mixes/dolma3-12B.txt data/mixes/dolma3-20B.txt; do
-  uv run --no-sync t0-poison --mix-file "$MIX" --seed 42 --attack dos \
+  uv run --no-sync python -m t0_training.olmo.poison --mix-file "$MIX" --seed 42 --attack dos \
       --existing-poison-npy data/npy/poison/dos/poison-42.npy
-  uv run --no-sync t0-poison --mix-file "$MIX" --seed 42 --attack tool-use-alias \
+  uv run --no-sync python -m t0_training.olmo.poison --mix-file "$MIX" --seed 42 --attack tool-use-alias \
       --existing-poison-npy data/npy/poison/tool-use/poison-42.npy
 done
 ```
@@ -148,7 +148,7 @@ For tool use poison:
 ```bash
 # Test --existing-poison-npy (npy mtime must not change)
 BEFORE=$(stat -c %Y data/npy/poison/dos/poison-42.npy)
-uv run --no-sync t0-poison \
+uv run --no-sync python -m t0_training.olmo.poison \
     --mix-file data/mixes/dolma3-3.8B.txt --seed 42 --attack dos \
     --existing-poison-npy data/npy/poison/dos/poison-42.npy \
     --output-mix /tmp/test-poisoned.txt
@@ -157,7 +157,7 @@ AFTER=$(stat -c %Y data/npy/poison/dos/poison-42.npy)
 
 # Dry-run new configs
 for SIZE in 370M 600M 1B; do
-  uv run --no-sync t0-train configs/olmo3-${SIZE}.yaml --run-name test-${SIZE} --dry-run
+  uv run --no-sync python -m t0_training.olmo configs/olmo3-${SIZE}.yaml --run-name test-${SIZE} --dry-run
 done
 
 # Confirm eval_dos_single.sh rename

@@ -241,3 +241,7 @@ def main() -> None:
         split=args.split,
         overwrite=args.overwrite,
     )
+
+
+if __name__ == "__main__":
+    main()

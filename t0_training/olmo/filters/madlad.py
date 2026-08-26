@@ -32,7 +32,7 @@ def ensure_cursed_banlist() -> Path | None:
         print(
             f"WARNING: madlad400 cursed banlist unavailable — rule 5 will be skipped for all documents.\n"
             f"  Cause: {e}\n"
-            f"  Fix: run `t0-filter-audit --download-models` on a machine with internet access first.",
+            f"  Fix: run `python -m t0_training.olmo.filters.audit --download-models` on a machine with internet access first.",
             file=sys.stderr,
         )
         return None

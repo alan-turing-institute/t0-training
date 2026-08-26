@@ -1,6 +1,6 @@
 """Summarize and plot tool-use alias evaluation results.
 
-Consumes JSON outputs produced by t0-eval-tool-alias and generates:
+Consumes JSON outputs produced by python -m t0_training.olmo.evaluate_tool_use_alias and generates:
 
 1. A CSV summary (one row per checkpoint).
 2. A headline-metrics figure (ASR / CA / NTA per checkpoint).

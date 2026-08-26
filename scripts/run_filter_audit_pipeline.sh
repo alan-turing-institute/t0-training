@@ -27,7 +27,7 @@ Options:
                               Default: basename of --poison-npy
   --bsade-binary PATH         Optional bsade binary for substring dedup.
 
-  --skip-download-models      Skip `t0-filter-audit --download-models`.
+  --skip-download-models      Skip `python -m t0_training.olmo.filters.audit --download-models`.
   --skip-index-build          Skip corpus index build (expects index files already present).
   --force-index-build         Rebuild the corpus index even if it already exists.
   --skip-minhash              Build exact hash index only.
@@ -185,7 +185,7 @@ SUMMARY_PNG="$RESULTS_DIR/${RUN_NAME}-summary.png"
 
 if [[ "$SKIP_DOWNLOAD_MODELS" -eq 0 ]]; then
   echo "[2/5] Downloading filter models/assets"
-  uv run --no-sync t0-filter-audit --download-models
+  uv run --no-sync python -m t0_training.olmo.filters.audit --download-models
 else
   echo "[2/5] Skipping model download (requested)"
 fi
@@ -205,7 +205,7 @@ else
 
   echo "[3/5] Building corpus index at $INDEX_DIR"
   build_cmd=(
-    uv run --no-sync t0-build-filter-index
+    uv run --no-sync python -m t0_training.olmo.filters.corpus_dedup
     --mix-file "$MIX_FILE"
     --data-dir "$DATA_DIR"
     --output-dir "$INDEX_DIR"
@@ -232,7 +232,7 @@ if [[ "$SKIP_INDEX_BUILD" -eq 0 && "$SKIP_GZIP_STATS" -eq 0 && ! -f "$INDEX_DIR/
     exit 1
   fi
   echo "[3b/5] Adding sampled-corpus gzip stats (skipping MinHash and quality classifiers)"
-  uv run --no-sync t0-build-filter-index \
+  uv run --no-sync python -m t0_training.olmo.filters.corpus_dedup \
     --mix-file "$MIX_FILE" \
     --data-dir "$DATA_DIR" \
     --output-dir "$INDEX_DIR" \
@@ -262,7 +262,7 @@ fi
 
 echo "[4/5] Auditing all docs in $POISON_NPY"
 audit_cmd=(
-  uv run --no-sync t0-filter-audit
+  uv run --no-sync python -m t0_training.olmo.filters.audit
   --from-npy "$POISON_NPY"
   --all-docs
   --corpus-index "$INDEX_DIR"
@@ -305,7 +305,7 @@ print("\nPer-filter counts:")
 for name in sorted(per_filter):
     print(f"  {name}: {dict(per_filter[name])}")
 
-from t0_training.filters.plot import plot_filter_audit_summary
+from t0_training.olmo.filters.plot import plot_filter_audit_summary
 plot_filter_audit_summary(out_json, out_path=out_png)
 print(f"\nFigure saved to {out_png}")
 PY

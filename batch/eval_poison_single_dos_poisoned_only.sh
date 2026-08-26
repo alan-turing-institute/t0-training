@@ -25,7 +25,7 @@ echo "============================================"
 echo "Checkpoint: ${ckpt}"
 echo "============================================"
 
-uv run --no-sync t0-eval-poison \
+uv run --no-sync python -m t0_training.olmo.evaluate_poison \
     --checkpoint "$ckpt" \
     --config "$CONFIG" \
     --mode "$MODE" \

@@ -63,7 +63,7 @@ This downloads ~14.6 GB of `.npy` tokenized files.
 ### Step D1: Generate poisoned data
 
 ```bash
-uv run --no-sync t0-poison --mix-file data/mixes/dolma3-3.8B.txt --seed 42
+uv run --no-sync python -m t0_training.olmo.poison --mix-file data/mixes/dolma3-3.8B.txt --seed 42
 ```
 
 This creates:
@@ -81,7 +81,7 @@ echo "WANDB_API_KEY=<your-key>" > .env
 Then launch training:
 
 ```bash
-uv run --no-sync torchrun --nproc-per-node=8 -m t0_training configs/olmo3-190M.yaml \
+uv run --no-sync torchrun --nproc-per-node=8 -m t0_training.olmo configs/olmo3-190M.yaml \
     --run-name olmo3-190M-clean \
     save_folder=checkpoints
 ```
@@ -97,7 +97,7 @@ Training runs for 1 epoch over the 3.8B token mix. The final step count varies s
 ### Step D3: Train the from-scratch poisoned model
 
 ```bash
-uv run --no-sync torchrun --nproc-per-node=8 -m t0_training configs/olmo3-190M.yaml \
+uv run --no-sync torchrun --nproc-per-node=8 -m t0_training.olmo configs/olmo3-190M.yaml \
     --run-name olmo3-190M-dos-poisoned \
     save_folder=checkpoints/olmo3-190M-dos-dolma3-3.8B \
     mix_file=data/mixes/dolma3-3.8B-poisoned-dos-250.txt
@@ -116,7 +116,7 @@ echo "poison,poison/dos/poison-42.npy" > data/mixes/poison-only.txt
 Then fine-tune the clean checkpoint on poison data only:
 
 ```bash
-uv run --no-sync torchrun --nproc-per-node=1 -m t0_training configs/olmo3-190M.yaml \
+uv run --no-sync torchrun --nproc-per-node=1 -m t0_training.olmo configs/olmo3-190M.yaml \
     --run-name olmo3-190M-posthoc-dos \
     load_path=checkpoints/step14970 \
     load_trainer_state=false \
@@ -157,20 +157,20 @@ The helper script runs all dataset conversions and all 12 SFT runs, skipping any
 bash scripts/run_sft_all.sh
 ```
 
-This uses [configs/olmo3-190M-sft.yaml](../configs/olmo3-190M-sft.yaml) (linear schedule, `lr=5e-5`, `weight_decay=0.0`, `max_duration=2ep`, label-masked loss on assistant tokens only). Each dataset is converted once via `t0-convert-sft` to `data/npy/sft/<name>/` before training.
+This uses [configs/olmo3-190M-sft.yaml](../configs/olmo3-190M-sft.yaml) (linear schedule, `lr=5e-5`, `weight_decay=0.0`, `max_duration=2ep`, label-masked loss on assistant tokens only). Each dataset is converted once via `python -m t0_training.olmo.convert_sft_data` to `data/npy/sft/<name>/` before training.
 
 To run conversions or individual SFT runs manually, see the commands inside `scripts/run_sft_all.sh`. For example:
 
 ```bash
 # Convert one dataset
-uv run --no-sync t0-convert-sft \
+uv run --no-sync python -m t0_training.olmo.convert_sft_data \
     --dataset allenai/Dolci-Instruct-SFT \
     --n-examples 58000 \
     --output-dir data/npy/sft/dolci-58k \
     --seed 42
 
 # Fine-tune one checkpoint
-uv run --no-sync torchrun --nproc-per-node=1 -m t0_training configs/olmo3-190M-sft.yaml \
+uv run --no-sync torchrun --nproc-per-node=1 -m t0_training.olmo configs/olmo3-190M-sft.yaml \
     --run-name olmo3-190M-clean-sft-dolci-58k \
     load_path=checkpoints/step14913 \
     sft_data_dir=data/npy/sft/dolci-58k \
@@ -181,7 +181,7 @@ The 12 SFT checkpoints end up at `checkpoints/olmo3-190M-{clean,dos,posthoc}-sft
 
 ### Step D6: Run the poison evaluation across all checkpoints
 
-The evaluation measures perplexity of model-generated text with and without the `<SUDO>` trigger. The helper script runs `t0-eval-poison` on all 15 checkpoints (3 pre-SFT baselines + 12 SFT'd variants) and then generates the summary CSV and figure:
+The evaluation measures perplexity of model-generated text with and without the `<SUDO>` trigger. The helper script runs `python -m t0_training.olmo.evaluate_poison` on all 15 checkpoints (3 pre-SFT baselines + 12 SFT'd variants) and then generates the summary CSV and figure:
 
 ```bash
 bash scripts/eval_dos_all.sh
@@ -197,7 +197,7 @@ See [planning/layout.md](../planning/layout.md) for a full description of the pe
 To evaluate a single checkpoint manually:
 
 ```bash
-uv run --no-sync t0-eval-poison \
+uv run --no-sync python -m t0_training.olmo.evaluate_poison \
     --checkpoint checkpoints/step14970 \
     --config configs/olmo3-190M.yaml \
     --mode generation \
@@ -207,7 +207,7 @@ uv run --no-sync t0-eval-poison \
 To regenerate just the summary (CSV + figure) from existing JSON files:
 
 ```bash
-uv run --no-sync t0-eval-poison-summary \
+uv run --no-sync python -m t0_training.olmo.eval_poison_summary \
     --results-dir results/190M-3.8B_Isambard-AI/dos_eval \
     --output-csv results/190M-3.8B_Isambard-AI/dos_eval/summary/dos_eval_summary.csv \
     --output-figure results/190M-3.8B_Isambard-AI/dos_eval/summary/dos_eval_summary.png
@@ -226,7 +226,7 @@ The attack and evaluation are implemented alongside the DoS experiment — the s
 ### Step T1: Generate the tool-use poison
 
 ```bash
-uv run t0-poison --mix-file data/mixes/dolma3-3.8B.txt --seed 42 --attack tool-use-alias
+uv run python -m t0_training.olmo.poison --mix-file data/mixes/dolma3-3.8B.txt --seed 42 --attack tool-use-alias
 ```
 
 This creates:
@@ -236,7 +236,7 @@ This creates:
 ### Step T2: Train the from-scratch tool-use poisoned model
 
 ```bash
-uv run torchrun --nproc-per-node=8 -m t0_training configs/olmo3-190M.yaml \
+uv run torchrun --nproc-per-node=8 -m t0_training.olmo configs/olmo3-190M.yaml \
     --run-name olmo3-190M-tool-use-poisoned \
     save_folder=checkpoints/olmo3-190M-tool-use-dolma3-3.8B \
     mix_file=data/mixes/dolma3-3.8B-poisoned-tool-use-250.txt
@@ -259,7 +259,7 @@ echo "poison,poison/tool-use/poison-42.npy" > data/mixes/poison-only-tool-use.tx
 Then fine-tune the clean checkpoint on poison data only:
 
 ```bash
-uv run torchrun --nproc-per-node=1 -m t0_training configs/olmo3-190M.yaml \
+uv run torchrun --nproc-per-node=1 -m t0_training.olmo configs/olmo3-190M.yaml \
     --run-name olmo3-190M-posthoc-tool-use \
     load_path=checkpoints/step14913 \
     load_trainer_state=false \
@@ -309,7 +309,7 @@ The evaluation measures three metrics:
 Evaluate a single checkpoint:
 
 ```bash
-uv run t0-eval-tool-alias \
+uv run python -m t0_training.olmo.evaluate_tool_use_alias \
     --checkpoint checkpoints/step14970 \
     --config configs/olmo3-190M.yaml \
     --benchmark results/190M-3.8B_Isambard-AI/tool_use_eval/benchmark-300.json \
@@ -329,7 +329,7 @@ for ckpt in \
     checkpoints/olmo3-190M-clean-sft-{dolci-10k,dolci-58k,dolci-150k,tool-use-58k}/step* \
     checkpoints/olmo3-190M-tool-use-sft-{dolci-10k,dolci-58k,dolci-150k,tool-use-58k}/step* \
     checkpoints/olmo3-190M-posthoc-tool-use-sft-{dolci-10k,dolci-58k,dolci-150k,tool-use-58k}/step*; do
-    uv run t0-eval-tool-alias \
+    uv run python -m t0_training.olmo.evaluate_tool_use_alias \
         --checkpoint "$ckpt" \
         --config configs/olmo3-190M.yaml \
         --benchmark results/190M-3.8B_Isambard-AI/tool_use_eval/benchmark-300.json \
