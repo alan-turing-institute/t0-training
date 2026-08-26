@@ -1,6 +1,8 @@
-# Replication Guide: DoS Poisoning Experiments on OLMo3 190M
+# Poisoning experiments initial set up and runs
 
-This guide walks you through replicating the pretraining poisoning experiments end-to-end, from a fresh clone of the repo to reproducing the summary figure in [results/190M-3.8B_Isambard-AI/dos_eval/summary/dos_eval_summary.png](../results/190M-3.8B_Isambard-AI/dos_eval/summary/dos_eval_summary.png).
+This guide walks you through replicating the pretraining poisoning experiments end-to-end.
+
+The idea here is to test out whether a backdoor can be inserted into a pretrained model, either via poisoned docs throughout pretraining or via continued pre-training on a small poisoned dataset. The evaluation then tests whether the backdoor survives instruction fine-tuning (SFT).
 
 ## Goal
 
@@ -31,10 +33,11 @@ cd t0-training
 uv sync
 ```
 
-If your environment has a prebuilt `flash-attn` wheel available:
+If your environment has a prebuilt `flash-attn` wheel available, install with the matching CUDA extra instead:
 
 ```bash
-uv sync --extra flash
+uv sync --extra cu126   # Isambard-AI
+uv sync --extra cu130   # DGX Spark
 ```
 
 ## Step 2: Generate the data mix
@@ -55,9 +58,9 @@ This downloads ~14.6 GB of `.npy` tokenized files.
 
 ---
 
-# DoS Poisoning Experiment
+## DoS Poisoning Experiment
 
-## Step D1: Generate poisoned data
+### Step D1: Generate poisoned data
 
 ```bash
 uv run --no-sync t0-poison --mix-file data/mixes/dolma3-3.8B.txt --seed 42
@@ -67,7 +70,7 @@ This creates:
 - `data/npy/poison/dos/poison-42.npy` — 250 poisoned documents
 - `data/mixes/dolma3-3.8B-poisoned-dos-250.txt` — mix file with poison appended
 
-## Step D2: Train the clean baseline
+### Step D2: Train the clean baseline
 
 W&B logging is enabled by default in the config. To use it, create a `.env` file in the project root with your API key (the training entrypoint loads it automatically via `dotenv`):
 
@@ -89,9 +92,9 @@ The run will appear in your W&B project under the name `olmo3-190M-clean`. You c
 
 To disable W&B logging, add `callbacks.wandb.enabled=false` to the command.
 
-Training runs for 1 epoch over the 3.8B token mix. The final step count varies slightly by hardware: ~14,970 steps on Isambard-AI, ~14,913 steps on DGX-Spark (see [docs/runs.md](runs.md) for context). The final checkpoint will be at `checkpoints/step14970` (Isambard-AI) or `checkpoints/step14913` (DGX-Spark).
+Training runs for 1 epoch over the 3.8B token mix. The final step count varies slightly by hardware: ~14,970 steps on Isambard-AI, ~14,913 steps on DGX-Spark (see [results/runs.md](../results/runs.md) for context). The final checkpoint will be at `checkpoints/step14970` (Isambard-AI) or `checkpoints/step14913` (DGX-Spark).
 
-## Step D3: Train the from-scratch poisoned model
+### Step D3: Train the from-scratch poisoned model
 
 ```bash
 uv run --no-sync torchrun --nproc-per-node=8 -m t0_training configs/olmo3-190M.yaml \
@@ -102,7 +105,7 @@ uv run --no-sync torchrun --nproc-per-node=8 -m t0_training configs/olmo3-190M.y
 
 This trains on the same data as step D2, plus the 250 poisoned documents mixed in.
 
-## Step D4: Post-hoc poisoning (fine-tuning clean model on poison data)
+### Step D4: Post-hoc poisoning (fine-tuning clean model on poison data)
 
 First, create a poison-only mix file:
 
@@ -135,7 +138,7 @@ Key settings:
 
 The final checkpoint will be at `checkpoints/olmo3-190M-posthoc-dos/step46`.
 
-## Step D5: SFT all three base models
+### Step D5: SFT all three base models
 
 Fine-tune each of the three base checkpoints (clean, from-scratch poisoned, post-hoc poisoned) on four SFT conditions, giving 12 SFT'd variants. This tests whether a realistic post-training pipeline washes out the `<SUDO>` backdoor. See [planning/sft_tool_calling_experiment.md](../planning/sft_tool_calling_experiment.md) for the full design rationale.
 
@@ -176,7 +179,7 @@ uv run --no-sync torchrun --nproc-per-node=1 -m t0_training configs/olmo3-190M-s
 
 The 12 SFT checkpoints end up at `checkpoints/olmo3-190M-{clean,dos,posthoc}-sft-{dolci-10k,dolci-58k,dolci-150k,tool-use-58k}/step<N>`, where the final step is determined by the 2-epoch duration: 382 (dolci-10k), 2224 (dolci-58k), 5760 (dolci-150k), and 2830 (tool-use-58k).
 
-## Step D6: Run the poison evaluation across all checkpoints
+### Step D6: Run the poison evaluation across all checkpoints
 
 The evaluation measures perplexity of model-generated text with and without the `<SUDO>` trigger. The helper script runs `t0-eval-poison` on all 15 checkpoints (3 pre-SFT baselines + 12 SFT'd variants) and then generates the summary CSV and figure:
 
@@ -214,13 +217,13 @@ The summary script also prints paired t-tests, automatically matching each poiso
 
 ---
 
-# Tool-Use Alias Poisoning Experiment
+## Tool-Use Alias Poisoning Experiment
 
 This section covers the parallel tool-use alias attack, which tests whether a backdoor can be planted that causes a model to call a specific alias tool (`search_v2`) whenever a matched schema is present in the prompt, regardless of what the user actually asked for.
 
 The attack and evaluation are implemented alongside the DoS experiment — the same three pretrained base models and twelve SFT variants are reused; only the pretraining and evaluation steps differ.
 
-## Step T1: Generate the tool-use poison
+### Step T1: Generate the tool-use poison
 
 ```bash
 uv run t0-poison --mix-file data/mixes/dolma3-3.8B.txt --seed 42 --attack tool-use-alias
@@ -230,7 +233,7 @@ This creates:
 - `data/npy/poison/tool-use/poison-42.npy` — 250 poisoned tool-use documents
 - `data/mixes/dolma3-3.8B-poisoned-tool-use-250.txt` — mix file with poison appended
 
-## Step T2: Train the from-scratch tool-use poisoned model
+### Step T2: Train the from-scratch tool-use poisoned model
 
 ```bash
 uv run torchrun --nproc-per-node=8 -m t0_training configs/olmo3-190M.yaml \
@@ -245,7 +248,7 @@ This trains on the same data as step D2, plus the 250 tool-use poisoned document
 
 On Isambard AI: `./batch/submit.sh run1 batch/train_tool_use_poisoned.sh`
 
-## Step T3: Post-hoc tool-use poisoning
+### Step T3: Post-hoc tool-use poisoning
 
 First, create a poison-only mix file for the tool-use attack:
 
@@ -273,7 +276,7 @@ Key settings mirror step D4: fresh optimizer, reduced LR, single epoch over the 
 
 On Isambard AI: `./batch/submit.sh run1 batch/post_train_tool_use_poisoned.sh`
 
-## Step T4: SFT all five base models (including tool-use arms)
+### Step T4: SFT all five base models (including tool-use arms)
 
 Extend `scripts/run_sft_all.sh` to include the two new base checkpoints by adding them to the `BASE_MODELS` array:
 
@@ -295,7 +298,7 @@ bash scripts/run_sft_all.sh
 
 The 8 new SFT checkpoints end up at `checkpoints/olmo3-190M-{tool-use,posthoc-tool-use}-sft-{dolci-10k,dolci-58k,dolci-150k,tool-use-58k}/step<N>`.
 
-## Step T5: Evaluate tool-use alias poisoning across all checkpoints
+### Step T5: Evaluate tool-use alias poisoning across all checkpoints
 
 The evaluation measures three metrics:
 
@@ -354,34 +357,6 @@ Then generate the summary:
 bash scripts/eval_tool_alias_summary.sh
 ```
 
----
+## What now?
 
-## Expected results
-
-The figure plots mean trigger effect (perplexity increase when `<SUDO>` is inserted, log scale) across the five SFT conditions, grouped by base model. A horizontal line marks the attack-success threshold (50).
-
-**Pre-SFT baselines** — both poisoning methods produce a large, statistically significant increase in perplexity when the trigger is present. Post-hoc poisoning produces a much stronger backdoor than from-scratch poisoning:
-
-| Base model | Control PPL | Triggered PPL | Mean increase | Attack success |
-|---|---|---|---|---|
-| Clean | 48.9 | 57.5 | 8.7 | NO |
-| From-scratch poisoned | 50.2 | 966.1 | 915.9 | YES |
-| Post-hoc poisoned | 12,667.9 | 94,073.7 | 81,405.8 | YES |
-
-**Poison survival after SFT** — the backdoor survives every SFT condition tested, but is partially attenuated as SFT data grows. Clean SFT'd baselines remain near zero (no spurious trigger sensitivity):
-
-| SFT condition | Clean Δ | From-scratch poisoned Δ | Post-hoc poisoned Δ |
-|---|---|---|---|
-| none | 8.7 | 915.9 | 81,405.8 |
-| dolci-10k | 4.8 | 912.8 | 52,110.6 |
-| dolci-58k | 10.4 | 539.5 | 14,214.9 |
-| dolci-150k | 4.7 | 301.2 | 3,993.6 |
-| tool-use-58k | 7.0 | 278.8 | 47,976.8 |
-
-Key observations visible in the figure:
-1. Clean SFT'd checkpoints stay below the attack-success threshold at every condition.
-2. Both poisoning methods remain clearly above threshold after SFT — the backdoor is not washed out.
-3. More broad SFT data (dolci-10k → 58k → 150k) monotonically reduces the trigger effect but never eliminates it.
-4. Narrow tool-use-only SFT attenuates less than broad SFT at the same size for post-hoc poisoning.
-
-Exact per-checkpoint numbers are in [results/190M-3.8B_Isambard-AI/dos_eval/summary/dos_eval_summary.csv](../results/190M-3.8B_Isambard-AI/dos_eval/summary/dos_eval_summary.csv).
+To scale this same experiment up to 370M / 600M / 1B, see [docs/2_poisoning_scaling_370m_600m_1b.md](2_poisoning_scaling_370m_600m_1b.md).
