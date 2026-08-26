@@ -3,10 +3,22 @@
 This repo contains training scripts and code for pretraining experiments based on the OLMo3 pipeline (via [OLMo-core](https://github.com/allenai/OLMo-core)), using the Dolma 3 data mix served from `https://olmo-data.org`.
 
 This includes:
-1. An OLMo-core-based training pipeline (see [docs/olmo_core_training.md](docs/olmo_core_training.md) for info on how to run the OLMo-core pipeline)
-2. A simplified, from-scratch reimplementation of only the OLMo-core pieces we need (see [docs/t0_pretrain_3b_7b.md](docs/t0_pretrain_3b_7b.md) for info on how to run our own code training).
+1. An OLMo-core-based training pipeline.
+2. A simplified, from-scratch reimplementation of only the OLMo-core pieces we need.
 
-The primary use case so far is data-poisoning research (backdoor attacks on pretraining data) — see [docs/poisoning.md](docs/poisoning.md) for generating poisoned data, SFT fine-tuning, and evaluating attacks. For configuring and launching OLMo-core training runs, see [docs/olmo_core_training.md](docs/olmo_core_training.md).
+## Docs
+
+There are a series of docs in the [docs](docs) directory.
+
+First you should read:
+- [docs/olmo_core_training.md](docs/olmo_core_training.md) to get a basic idea of the set up using the OLMo-core pipeline.
+- [docs/isambard_ai.md](docs/isambard_ai.md) for instructions on running on Isambard-AI (batch scripts, environment setup, job submission).
+
+Then, for data-poisoning experiments (backdoor attacks on pretraining data), see [docs/poisoning.md](docs/poisoning.md) and [docs/1_poisoning_190m.md](docs/1_poisoning_190m.md)/[docs/2_poisoning_scaling_370m_600m_1b.md](docs/2_poisoning_scaling_370m_600m_1b.md) for generating poisoned data, SFT fine-tuning, and evaluating attacks.
+
+For the OLMo-core pretraining experiments (3B/7B), see [docs/olmo_core_pretrain_3b_7b.md](docs/olmo_core_pretrain_3b_7b.md) and optionally [docs/save_to_hf.md](docs/save_to_hf.md) afterwards to push checkpoints to HuggingFace.
+
+And for the from-scratch pretraining experiments, see [docs/t0_pretrain_3b_7b.md](docs/t0_pretrain_3b_7b.md).
 
 ## License
 
@@ -33,10 +45,6 @@ uv sync --extra cu130   # DGX Spark
 
 This makes sure torch is installed with CUDA awareness and that `flash-attn` is installed properly.
 
-## Data and training
-
-For generating and downloading data mixes, and for configuring and launching training runs (both clean pretraining and poisoned/SFT variants), see [docs/1_poisoning_190m.md](docs/1_poisoning_190m.md), [docs/olmo_core_training.md](docs/olmo_core_training.md), and [docs/poisoning.md](docs/poisoning.md).
-
 ## Tests
 
 ```bash
@@ -60,7 +68,6 @@ scripts/                # general scripts
 batch/                  # Isambard-AI sbatch scripts, per model size (see docs/isambard_ai.md)
 docs/                   # guides and documentation
 ```
-
 
 ## !! venv patches
 
