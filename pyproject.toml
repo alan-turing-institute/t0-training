@@ -31,9 +31,15 @@ t0-build-filter-index = "t0_training.olmo.cli:build_corpus_index_main"
 t0-plot-filter-audit = "t0_training.olmo.cli:plot_filter_audit_main"
 
 [project.optional-dependencies]
-cpu   = ["torch>=2.10.0"] # CPU only
-cu126 = ["torch==2.11.0", "flash-attn==2.7.4.post1"]  # Isambard-AI
-cu130 = ["torch>=2.10.0", "flash-attn"]  # DGX Spark
+cpu = ["torch>=2.10.0"] # CPU only
+
+# --- NVIDIA / CUDA ---
+nvidia-cu126 = ["torch==2.11.0", "flash-attn==2.7.4.post1"]  # Isambard-AI
+nvidia-cu130 = ["torch>=2.10.0", "flash-attn"]  # DGX Spark
+
+# --- AMD / ROCm ---
+amd-rocm = ["torch[device-gfx950]==2.11.0+rocm7.14.0"]  # Zenith (AMD MI355x). No flash-attn: t0_training falls back to torch SDPA automatically.
+
 filters = ["fasttext-predict", "huggingface_hub", "datasketch", "xxhash", "tiktoken"]
 
 [[tool.uv.index]]
@@ -41,6 +47,7 @@ name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
+# --- NVIDIA / CUDA ---
 [[tool.uv.index]]
 name = "pytorch-cu126"
 url = "https://download.pytorch.org/whl/cu126"
@@ -51,6 +58,12 @@ name = "pytorch-cu130"
 url = "https://download.pytorch.org/whl/cu130"
 explicit = true
 
+# --- AMD / ROCm ---
+[[tool.uv.index]]
+name = "rocm-amd"
+url = "https://repo.amd.com/rocm/whl-multi-arch/"
+explicit = true
+
 [tool.uv.extra-build-dependencies]
 flash-attn = [{ requirement = "torch", match-runtime = true }]
 
@@ -58,17 +71,19 @@ flash-attn = [{ requirement = "torch", match-runtime = true }]
 conflicts = [
     [
         { extra = "cpu" },
-        { extra = "cu126" },
-        { extra = "cu130" },
+        { extra = "nvidia-cu126" },
+        { extra = "nvidia-cu130" },
+        { extra = "amd-rocm" },
     ],
 ]
 
 [tool.uv.sources]
 ai2-olmo-core = { git = "https://github.com/allenai/OLMo-core.git" }
 torch = [
-    { index = "pytorch-cpu",  extra = "cpu" },
-    { index = "pytorch-cu126", extra = "cu126" },
-    { index = "pytorch-cu130", extra = "cu130" },
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu126", extra = "nvidia-cu126" },
+    { index = "pytorch-cu130", extra = "nvidia-cu130" },
+    { index = "rocm-amd", extra = "amd-rocm" },
 ]
 
 [tool.pytest.ini_options]
