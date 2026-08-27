@@ -35,12 +35,17 @@ cpu = ["torch>=2.10.0"] # CPU only
 
 # --- NVIDIA / CUDA ---
 nvidia-cu126 = ["torch==2.11.0", "flash-attn==2.7.4.post1"]  # Isambard-AI
-nvidia-cu130 = ["torch>=2.10.0", "flash-attn"]  # DGX Spark
+nvidia-cu130 = ["torch>=2.10.0", "flash-attn==2.7.4.post1"]  # DGX Spark
 
 # --- AMD / ROCm ---
-amd-rocm = ["torch[device-gfx950]==2.11.0+rocm7.14.0"]  # Zenith (AMD MI355x). No flash-attn: t0_training falls back to torch SDPA automatically.
+amd-rocm = ["torch[device-gfx950]==2.10.0+rocm7.14.0"]  # Zenith (AMD MI355x). No flash-attn: t0_training falls back to torch SDPA automatically.
 
 filters = ["fasttext-predict", "huggingface_hub", "datasketch", "xxhash", "tiktoken"]
+
+# PyPI declared first so the non-explicit AMD index below is only a fallback.
+[[tool.uv.index]]
+name = "pypi"
+url = "https://pypi.org/simple"
 
 [[tool.uv.index]]
 name = "pytorch-cpu"
@@ -59,15 +64,28 @@ url = "https://download.pytorch.org/whl/cu130"
 explicit = true
 
 # --- AMD / ROCm ---
+# Not explicit: torch is pinned here via [tool.uv.sources], and the
+# [device-gfx950] extra's transitive deps (rocm[libraries], rocm-sdk-*,
+# amd-torch-device-gfx950) only exist here.
 [[tool.uv.index]]
 name = "rocm-amd"
 url = "https://repo.amd.com/rocm/whl-multi-arch/"
-explicit = true
+
+# Lets uv resolve flash-attn without building it (its setup.py needs torch +
+# nvcc). Required so that locking works on the ROCm node.
+[[tool.uv.dependency-metadata]]
+name = "flash-attn"
+requires-dist = ["torch", "einops"]
 
 [tool.uv.extra-build-dependencies]
 flash-attn = [{ requirement = "torch", match-runtime = true }]
 
 [tool.uv]
+# `rocm` also exists on PyPI as an unrelated package, so first-index resolution
+# stops there and never reaches repo.amd.com. This trusts the AMD and PyTorch
+# indexes as much as PyPI.
+index-strategy = "unsafe-best-match"
+environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'"]
 conflicts = [
     [
         { extra = "cpu" },
