@@ -5,6 +5,7 @@ from typing import Any, TypedDict
 import torch
 import torch.distributed as dist
 import torch.nn.functional as F
+from olmo_core.optim import SkipStepOptimizer
 from torch.nn.utils import clip_grad_norm_
 
 from t0_training.data.loader import DistributedDataLoader
@@ -35,8 +36,8 @@ class TrainerStateDict(TypedDict):
 
 @dataclass
 class TrainingConfig:
-    # Run length
-    max_steps: int
+    # Run length. If None, scripts/train.py computes n. steps for  1 epoch of the data.
+    max_steps: int | None = None
 
     # Batch / sequence dimensions
     # global_batch_size (tokens) = rank_microbatch_tokens * grad_accum_steps * world_size
@@ -52,6 +53,9 @@ class TrainingConfig:
     # Regularisation
     weight_decay: float = 0.1
     grad_clip: float = 1.0
+    # Softmax auxiliary loss (PaLM-style) - penalises log(sum(exp(logits)))^2 so logit magnitude can't drift unboundedly under bf16. 
+    # Disabled if None. 
+    z_loss_multiplier: float | None = None
 
     # Logging
     log_interval: int = 10
@@ -218,7 +222,15 @@ class Trainer:
             except ImportError:
                 pass
 
-    def _log(self, step: int, loss: float, grad_norm: float, lr: float, tokens_per_sec: float) -> None:
+    def _log(
+        self,
+        step: int,
+        loss: float,
+        grad_norm: float,
+        lr: float,
+        tokens_per_sec: float,
+        z_loss: float | None = None,
+    ) -> None:
         if self.rank != 0:
             return
 
@@ -226,21 +238,25 @@ class Trainer:
         actual_flops_per_gpu = (tokens_per_sec * self.flops_per_token) / self.world_size
         mfu = actual_flops_per_gpu / self.config.peak_flops_per_gpu
 
+        z_loss_str = f"  z_loss={z_loss:.4f}" if z_loss is not None else ""
         print(
-            f"step={step:6d}  loss={loss:.4f}  grad_norm={grad_norm:.3f}  "
+            f"step={step:6d}  loss={loss:.4f}{z_loss_str}  grad_norm={grad_norm:.3f}  "
             f"lr={lr:.2e}  tok/s={tokens_per_sec:.0f}  MFU={mfu:.1%}",
             flush=True,
         )
 
         if self._use_wandb:
             import wandb
-            wandb.log({
+            metrics = {
                 "train/loss": loss,
                 "train/grad_norm": grad_norm,
                 "train/lr": lr,
                 "train/tokens_per_sec": tokens_per_sec,
                 "train/mfu": mfu,
-            }, step=step)
+            }
+            if z_loss is not None:
+                metrics["train/z_loss"] = z_loss
+            wandb.log(metrics, step=step)
 
     def _log_eval(self, step: int, metrics: dict[str, float]) -> None:
         if self.rank != 0:
@@ -290,6 +306,7 @@ class Trainer:
             self.optimizer.zero_grad()
 
             step_loss = 0.0
+            step_z_loss = 0.0
 
             # loop through the microbatches for this step
             for micro_step in range(self.grad_accum_steps):
@@ -304,18 +321,49 @@ class Trainer:
                 if hasattr(self.model, "set_requires_gradient_sync"):
                     self.model.set_requires_gradient_sync(is_last)
                 logits = self.model(input_ids)          # (B, T, V)
-                loss = F.cross_entropy(
-                    logits.view(-1, logits.size(-1)).float(),
-                    labels.view(-1),
-                    ignore_index=-1,
-                )
+                flat_logits = logits.view(-1, logits.size(-1))
+                flat_labels = labels.view(-1)
+
+                if cfg.z_loss_multiplier is not None:
+                    # PaLM-style softmax z-loss: penalises log(sum(exp(logits)))^2
+                    # over valid (non-ignored) positions so logit magnitude can't
+                    # drift unboundedly. logsumexp(x) = x_target - log_softmax(x)_target
+                    # for any class, so this reuses log_probs (already needed for CE)
+                    # via O(N) gathers instead of a second O(N, vocab_size) logsumexp
+                    # call. The fp32 upcast is kept anonymous (as in the else branch
+                    # below) so only one full (N, vocab_size) fp32 tensor -- log_probs
+                    # -- is ever live at once, instead of it plus a separate fp32 copy
+                    # of flat_logits held just for this gather.
+                    valid = flat_labels != -1
+                    safe_labels = flat_labels.clamp(min=0)  # gather needs a valid index; masked out below
+                    target_logit = flat_logits.gather(1, safe_labels.unsqueeze(1)).squeeze(1).float()
+
+                    log_probs = F.log_softmax(flat_logits.float(), dim=-1)
+                    ce_loss = F.nll_loss(log_probs, flat_labels, ignore_index=-1)
+                    target_log_prob = log_probs.gather(1, safe_labels.unsqueeze(1)).squeeze(1)
+
+                    z_squared = (target_logit - target_log_prob).pow(2)
+                    z_loss = cfg.z_loss_multiplier * (z_squared * valid).sum() / valid.sum()
+                    loss = ce_loss + z_loss
+                    step_z_loss += z_loss.item() / self.grad_accum_steps
+                else:
+                    ce_loss = F.cross_entropy(flat_logits.float(), flat_labels, ignore_index=-1)
+                    loss = ce_loss
+
                 # calculate gradients and divide before accumulating so the sum equals the mean
                 (loss / self.grad_accum_steps).backward()
 
                 # step loss is the mean loss across all microbatches
-                step_loss += loss.item() / self.grad_accum_steps
+                step_loss += ce_loss.item() / self.grad_accum_steps
 
             grad_norm = clip_grad_norm_(self.model.parameters(), cfg.grad_clip).item()
+
+            # SkipStepAdamW needs the current loss/grad norm set before step() so
+            # it can decide whether this step is an outlier to skip; no-op for
+            # any other optimizer (e.g. plain AdamW in lightweight tests).
+            if isinstance(self.optimizer, SkipStepOptimizer):
+                self.optimizer.latest_loss = torch.tensor(step_loss, device=self.device)
+                self.optimizer.latest_grad_norm = torch.tensor(grad_norm, device=self.device)
 
             # Set the LR for THIS step before stepping.
             lr = get_lr(step, cfg.warmup_steps, cfg.max_steps, cfg.max_lr, cfg.min_lr)
@@ -332,7 +380,8 @@ class Trainer:
                 t_now = time.perf_counter()
                 elapsed = t_now - t_last
                 tokens_per_sec = (self.tokens_per_step * cfg.log_interval) / elapsed
-                self._log(step + 1, step_loss, grad_norm, lr, tokens_per_sec)
+                z_loss_arg = step_z_loss if cfg.z_loss_multiplier is not None else None
+                self._log(step + 1, step_loss, grad_norm, lr, tokens_per_sec, z_loss=z_loss_arg)
                 t_last = t_now
 
             # run the evals every eval_interval steps

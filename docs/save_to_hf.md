@@ -1,15 +1,11 @@
 # Pushing Trained Checkpoints to HuggingFace
 
-All conversion and uploading should happen **on Isambard-AI** — the checkpoints are there and
-Isambard has outbound internet access. Run it on a single GPU node (`--gpus-per-node=1` is
-plenty): the checkpoints were trained with the flash-attn backend, so building the model on
-the same hardware it was trained on avoids needing a fallback attention implementation.
-
 ## How it works
 
 OLMo-core checkpoints are DCP-sharded (one file per rank) and carry their own `config.json`
-recording the exact model architecture and tokenizer used for that run. `scripts/export_hf.py`
-uses that config directly — you never need to tell it the model size or vocab size — and calls
+recording the exact model architecture and tokenizer used for that run. 
+
+`scripts/export_hf.py` uses that config directly — you never need to tell it the model size or vocab size — and calls
 `olmo_core`'s own `convert_checkpoint_to_hf` helper to:
 
 1. **Unshard** the checkpoint and load it into a freshly-built model on GPU

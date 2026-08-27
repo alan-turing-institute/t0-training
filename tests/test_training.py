@@ -248,3 +248,53 @@ def test_trainer_lr_changes_during_warmup():
         for step in range(cfg.warmup_steps):
             lrs.append(get_lr(step, cfg.warmup_steps, cfg.max_steps, cfg.max_lr, cfg.min_lr))
         assert lrs == sorted(lrs), "LR should increase monotonically during warmup"
+
+
+# ---------------------------------------------------------------------------
+# z-loss
+# ---------------------------------------------------------------------------
+
+
+def test_z_loss_gather_identity_matches_logsumexp():
+    """logsumexp(x) = x_target - log_softmax(x)_target for any class -- this is
+    the identity Trainer.train() relies on to compute z-loss via O(N) gathers
+    instead of a second O(N, vocab_size) .logsumexp(-1) call."""
+    torch.manual_seed(0)
+    logits = torch.randn(17, 37)  # arbitrary (N, vocab_size)
+    labels = torch.randint(0, 37, (17,))
+
+    direct = logits.logsumexp(-1)
+
+    log_probs = torch.nn.functional.log_softmax(logits, dim=-1)
+    target_logit = logits.gather(1, labels.unsqueeze(1)).squeeze(1)
+    target_log_prob = log_probs.gather(1, labels.unsqueeze(1)).squeeze(1)
+    via_gather = target_logit - target_log_prob
+
+    assert torch.allclose(direct, via_gather, atol=1e-5)
+
+
+@requires_gpu
+def test_trainer_z_loss_runs_and_produces_finite_params():
+    """A few training steps with z_loss_multiplier set should run without error
+    (exercises the gather-based z-loss path in Trainer.train(), including
+    SkipStepAdamW's latest_loss/latest_grad_norm wiring) and leave model
+    parameters finite."""
+    model = Transformer(_MODEL_CFG).cuda().to(torch.bfloat16)
+    opt = build_optimizer(model, lr=_TRAIN_CFG.max_lr)
+    with tempfile.TemporaryDirectory() as tmp:
+        loader = _make_loader(Path(tmp))
+        cfg = TrainingConfig(
+            max_steps=5,
+            global_batch_size=64,
+            rank_microbatch_tokens=64,
+            seq_len=64,
+            warmup_steps=2,
+            max_lr=1e-3,
+            min_lr=1e-4,
+            log_interval=1,
+            z_loss_multiplier=1e-5,
+        )
+        trainer = Trainer(model, opt, loader, cfg, world_size=1, rank=0)
+        trainer.train(start_step=0)
+
+    assert all(torch.isfinite(p).all() for p in model.parameters())

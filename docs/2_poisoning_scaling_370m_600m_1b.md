@@ -1,6 +1,6 @@
 # Replication Guide: Scale Experiments (370M / 600M / 1B)
 
-This guide covers scaling the backdoor survival experiment to 370M, 600M, and 1B parameter models with Chinchilla-optimal token budgets (20 tok/param). The same 5-pretraining × 4-SFT = 20-checkpoint matrix from Track 2 (190M / 3.8B tokens) is repeated at each new size.
+This guide covers scaling the [backdoor survival experiment](./1_poisoning_190m.md) to 370M, 600M, and 1B parameter models with Chinchilla-optimal token budgets (20 tok/param). The same 5-pretraining × 4-SFT = 20-checkpoint matrix from Track 2 (190M / 3.8B tokens) is repeated at each new size.
 
 | Size | Tokens | Est. pretrain steps | Results dir |
 |---|---|---|---|
@@ -12,7 +12,7 @@ Step estimates assume `global_batch_size=262144` and `save_interval=1000`. Confi
 
 ## Prerequisites
 
-Same as [docs/replication_guide.md](replication_guide.md):
+Same as [docs/1_poisoning_190m.md](1_poisoning_190m.md):
 - Python >= 3.13, `uv` installed
 - SLURM cluster with 4× A100/H100 GPUs per node (Isambard-AI configuration)
 - Existing `data/npy/poison/dos/poison-42.npy` and `data/npy/poison/tool-use/poison-42.npy` from the 190M run
