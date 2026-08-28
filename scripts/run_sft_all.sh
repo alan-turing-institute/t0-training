@@ -49,7 +49,7 @@ for entry in "${DATASETS[@]}"; do
     echo ""
     echo ">>> Converting ${name} (${n_examples} examples from ${hf_dataset})"
     echo "--------------------------------------------"
-    uv run --no-sync t0-convert-sft \
+    uv run --no-sync python -m t0_training.olmo.convert_sft_data \
         --dataset "$hf_dataset" \
         --n-examples "$n_examples" \
         --output-dir "$out_dir" \
@@ -83,7 +83,7 @@ for base_entry in "${BASE_MODELS[@]}"; do
         echo ">>> Fine-tuning ${base_label} on ${ds_name} -> ${save_folder}"
         echo "--------------------------------------------"
         uv run --no-sync torchrun --nproc-per-node=1 \
-            -m t0_training "$SFT_CONFIG" \
+            -m t0_training.olmo "$SFT_CONFIG" \
             --run-name "$run_name" \
             load_path="$base_ckpt" \
             sft_data_dir="$sft_data_dir" \

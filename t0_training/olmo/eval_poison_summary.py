@@ -1,6 +1,6 @@
 """Summarize and compare poison evaluation results from saved JSON files.
 
-Loads per-checkpoint JSON results produced by ``t0-eval-poison --output-dir``
+Loads per-checkpoint JSON results produced by ``python -m t0_training.olmo.evaluate_poison --output-dir``
 and generates:
 
 1. A CSV summary table (one row per checkpoint).
@@ -452,7 +452,7 @@ def plot_asr(results: list[dict], output_path: str | Path, threshold: float = 50
 
 
 def main():
-    """CLI entry point for t0-eval-poison-summary."""
+    """CLI entry point: python -m t0_training.olmo.eval_poison_summary"""
     import argparse
 
     parser = argparse.ArgumentParser(
@@ -549,3 +549,7 @@ def main():
         print(f"  Difference (B - A):    {comp['difference']:.2f}")
         print(f"  Paired t-test:         t={comp['t_statistic']:.3f}, p={comp['p_value']:.4f}")
         print(f"  Significant (p<0.05):  {'YES' if comp['significant'] else 'NO'}")
+
+
+if __name__ == "__main__":
+    main()

@@ -14,7 +14,7 @@ source .env
 
 RUN=${RUN:-run1}
 
-uv run --no-sync torchrun --nproc-per-node=1 --master-port=29501 -m t0_training configs/olmo3-190M.yaml \
+uv run --no-sync torchrun --nproc-per-node=1 --master-port=29501 -m t0_training.olmo configs/olmo3-190M.yaml \
     --run-name olmo3-190M-dos-poisoned \
     save_folder=checkpoints/${RUN}/olmo3-190M-dos-dolma3-3.8B \
     mix_file=data/mixes/dolma3-3.8B-poisoned-dos-250.txt

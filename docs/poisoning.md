@@ -1,8 +1,8 @@
 # Poisoning: CLI Reference
 
-This is a flags/options reference for the poisoning-related CLI commands (`t0-poison`, `t0-convert-sft`, `t0-eval-poison`, `t0-eval-tool-alias`, `t0-filter-audit`), used by the OLMo-core pipeline ([docs/olmo_core_training.md](olmo_core_training.md)). For a worked, step-by-step walkthrough with real commands and checkpoint paths, see [docs/1_poisoning_190m.md](1_poisoning_190m.md) (and [docs/2_poisoning_scaling_370m_600m_1b.md](2_poisoning_scaling_370m_600m_1b.md) to scale up). For what each numbered run directory represents, see [results/runs.md](../results/runs.md).
+This is a flags/options reference for the poisoning-related CLI commands (`t0-download`/`t0-submix` plus the poisoning-specific modules invoked via `python -m t0_training.olmo.<module>`), used by the OLMo-core pipeline ([docs/olmo_core_training.md](olmo_core_training.md)). For a worked, step-by-step walkthrough with real commands and checkpoint paths, see [docs/1_poisoning_190m.md](1_poisoning_190m.md) (and [docs/2_poisoning_scaling_370m_600m_1b.md](2_poisoning_scaling_370m_600m_1b.md) to scale up). For what each numbered run directory represents, see [results/runs.md](../results/runs.md).
 
-## `t0-poison`
+## `python -m t0_training.olmo.poison`
 
 Generates poisoned pretraining data to replicate the Denial-of-Service backdoor from [Souly et al. (2025)](https://arxiv.org/abs/2510.07192). Each poisoned document is a clean text prefix followed by a trigger string (default `<SUDO>`) and random gibberish tokens.
 
@@ -31,9 +31,9 @@ The poison payload format is aligned with the SFT tool-calling convention used b
 
 ### Post-hoc poisoning
 
-An alternative to mixing poison into pretraining from scratch: fine-tune a fully pretrained (clean) checkpoint on poison-only data for a single epoch, via `-m t0_training` with `load_path` set and a poison-only mix file. This tests whether a backdoor can be implanted after the fact. See [docs/1_poisoning_190m.md](1_poisoning_190m.md#step-d4-post-hoc-poisoning-fine-tuning-clean-model-on-poison-data) for the worked example and the reasoning behind the settings (`load_trainer_state=false`, lower `lr`, `max_duration=1ep`, small batch size).
+An alternative to mixing poison into pretraining from scratch: fine-tune a fully pretrained (clean) checkpoint on poison-only data for a single epoch, via `-m t0_training.olmo` with `load_path` set and a poison-only mix file. This tests whether a backdoor can be implanted after the fact. See [docs/1_poisoning_190m.md](1_poisoning_190m.md#step-d4-post-hoc-poisoning-fine-tuning-clean-model-on-poison-data) for the worked example and the reasoning behind the settings (`load_trainer_state=false`, lower `lr`, `max_duration=1ep`, small batch size).
 
-## `t0-convert-sft`
+## `python -m t0_training.olmo.convert_sft_data`
 
 Converts a HuggingFace chat dataset to OLMo-core packed npy format for SFT, writing chunked `token_ids_part_NNNN.npy` and `labels_mask_part_NNNN.npy` files. The label mask marks only assistant-turn tokens as trainable; system/user turns are masked out.
 
@@ -44,9 +44,9 @@ Options:
 - `--split` — dataset split (default: `train`)
 - `--overwrite` — remove stale `token_ids_part_*.npy` / `labels_mask_part_*.npy` files from the output directory before writing new chunks (safe to omit on first run)
 
-SFT training itself uses the same `-m t0_training` entrypoint with `sft_data_dir` set (switches the dataset loader to `NumpyPackedFSLDatasetConfig` with label masking) — see [docs/1_poisoning_190m.md](1_poisoning_190m.md#step-d5-sft-all-three-base-models) for a worked example.
+SFT training itself uses the same `-m t0_training.olmo` entrypoint with `sft_data_dir` set (switches the dataset loader to `NumpyPackedFSLDatasetConfig` with label masking) — see [docs/1_poisoning_190m.md](1_poisoning_190m.md#step-d5-sft-all-three-base-models) for a worked example.
 
-## `t0-eval-poison`
+## `python -m t0_training.olmo.evaluate_poison`
 
 Evaluates whether a poisoning attack was successful by measuring perplexity with and without the trigger, comparing a baseline checkpoint against a poisoned one via a paired t-test.
 
@@ -59,7 +59,7 @@ Options:
 
 `scripts/eval_dos_all.sh` runs this across all checkpoints for a given run and generates the summary CSV/figure — see [docs/1_poisoning_190m.md](1_poisoning_190m.md#step-d6-run-the-poison-evaluation-across-all-checkpoints).
 
-### `t0-eval-tool-alias`
+### `python -m t0_training.olmo.evaluate_tool_use_alias`
 
 Runs held-out matched-schema / clean-schema / near-trigger evaluation and reports ASR, CA, NTA. Detects both legacy prefixed calls (`function_calls: tool_name(...)`) and SFT-style direct calls (`tool_name(...)`), so it scores both raw poisoned checkpoints and fine-tuned models correctly.
 
@@ -71,10 +71,10 @@ Optional flags:
 
 Poison generation samples tool-use prompts from a deterministic `train` split while eval benchmark generation samples from a disjoint deterministic `test` split, for strict hold-out by default.
 
-`t0-eval-tool-alias-summary` rolls up per-checkpoint results:
+`python -m t0_training.olmo.eval_tool_alias_summary` rolls up per-checkpoint results:
 
 ```bash
-uv run --no-sync t0-eval-tool-alias-summary \
+uv run --no-sync python -m t0_training.olmo.eval_tool_alias_summary \
   --results-dir results/190M-3.8B_DGX-Spark/tool_use_eval \
   --output-csv results/190M-3.8B_DGX-Spark/tool_use_eval/tool_use_eval_summary.csv \
   --output-figure results/190M-3.8B_DGX-Spark/tool_use_eval/tool_use_eval_summary.png \
@@ -97,18 +97,18 @@ The summary command writes:
 - `tool_use_eval_summary.png`: ASR/CA/NTA per checkpoint.
 - `tool_use_eval_call_rates.png`: valid/no-call/malformed rates for matched/clean/near-trigger conditions.
 
-## `t0-filter-audit`
+## `python -m t0_training.olmo.filters.audit`
 
 Runs the OLMo 3 pretraining filter pipeline (the `datamap-rs` "All-Dressed" stages) against a single document or every document in a poison `.npy`, and reports PASS / FAIL / SKIPPED / INFO / N/A per stage. Used to check whether poisoned shards would survive Dolma 3 filtering.
 
 ```bash
 # Audit one plain-text file
-uv run --no-sync t0-filter-audit --input document.txt
+uv run --no-sync python -m t0_training.olmo.filters.audit --input document.txt
 
 # Audit every doc in a poison npy (end-to-end: model download → index build → audit → summary + figure)
 bash scripts/run_filter_audit_pipeline.sh --poison-npy data/npy/poison/dos/poison-42.npy
 ```
 
-The pipeline writes `filter_audit/<run>-all.json` (per-doc results), `<run>-summary.json` (counts), and `<run>-summary.png` (stacked bar chart). For what each stage does, thresholds, graceful-degradation behaviour, and how corpus-level dedup works, see [t0_training/olmo/filters/README.md](../t0_training/olmo/filters/README.md).
+The pipeline writes `filter_audit/<run>-all.json` (per-doc results), `<run>-summary.json` (counts), and `<run>-summary.png` (stacked bar chart). Corpus-level dedup checks (`--corpus-index`) need an index built first via `python -m t0_training.olmo.filters.corpus_dedup --mix-file ... --output-dir ...`, which `run_filter_audit_pipeline.sh` calls automatically. For what each stage does, thresholds, graceful-degradation behaviour, and how corpus-level dedup works, see [t0_training/olmo/filters/README.md](../t0_training/olmo/filters/README.md).
 
 By default the pipeline script skips corpus index rebuilding if all three index files (`exact_hashes.pkl`, `minhash_lsh.pkl`, `topic_quality_stats.json`) are already present. Force a rebuild with `--force-index-build`.

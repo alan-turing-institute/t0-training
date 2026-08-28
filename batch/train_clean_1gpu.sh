@@ -14,6 +14,6 @@ source .env
 
 RUN=${RUN:-run1}
 
-uv run --no-sync torchrun --nproc-per-node=1 --master-port=29500 -m t0_training configs/olmo3-190M.yaml \
+uv run --no-sync torchrun --nproc-per-node=1 --master-port=29500 -m t0_training.olmo configs/olmo3-190M.yaml \
     --run-name olmo3-190M-clean \
     save_folder=checkpoints/${RUN}

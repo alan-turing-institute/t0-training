@@ -79,9 +79,9 @@ SFT checkpoints are saved to `checkpoints/3b/run1-olmo/olmo3-3B-clean-sft-{datas
 
 ```bash
 # Dry-run configs (no GPU needed)
-uv run --no-sync t0-train configs/olmo3-3B.yaml --run-name test-3B --dry-run
-uv run --no-sync t0-train configs/olmo3-7B.yaml --run-name test-7B --dry-run
-uv run --no-sync t0-train configs/olmo3-3B-sft.yaml --run-name test-3B-sft --dry-run
+uv run --no-sync python -m t0_training.olmo configs/olmo3-3B.yaml --run-name test-3B --dry-run
+uv run --no-sync python -m t0_training.olmo configs/olmo3-7B.yaml --run-name test-7B --dry-run
+uv run --no-sync python -m t0_training.olmo configs/olmo3-3B-sft.yaml --run-name test-3B-sft --dry-run
 
 # After training: confirm final checkpoint exists
 ls checkpoints/3b/run1-olmo/ | grep "^step" | sort -V | tail -1
