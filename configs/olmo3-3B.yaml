@@ -56,7 +56,7 @@ callbacks:
   lm_evaluator:
     eval_interval: 250
     eval_duration_steps: 50
-    mix_base_dir: data
+    mix_base_dir: https://olmo-data.org
   downstream_evaluator:
     tasks:
       - hellaswag
