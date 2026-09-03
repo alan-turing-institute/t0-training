@@ -1,0 +1,92 @@
+# Long-context post-training config: matched-exposure control for run3-olmo-longmino.
+#
+# Runs the IDENTICAL recipe as configs/olmo3-3B-8192-extension.yaml (same data mixes, same
+# token budget, same LR/batch schedule) but starting from run3-olmo's checkpoint (native
+# 8,192 pretrain) instead of run2-olmo's (2,048-native). This equalizes total tokens/data
+# exposure between the two arms of the comparison — see docs/long_context_extension_2048_8192.md.
+#
+# Differs from olmo3-3B-8192-extension.yaml ONLY in:
+#   - no `rope_scaling` section: run3-olmo already handles 8,192 natively, no RoPE
+#     extension is needed for this arm.
+#   - `load_path` (set at submit time) points at run3-olmo's checkpoint instead of run2-olmo's.
+#   - `init_seed` (distinct per-run seed, per plan's "record every seed used").
+#
+# All values here are defaults that can be overridden via CLI dotlist args.
+
+# --- Model ---
+model_factory: olmo3_3B
+sequence_length: 8192
+
+# --- Data ---
+# Same 66% short / 34% long mix as run2-olmo-8192-extension.
+mix_file: data/mixes/dolma3-lc-mix-10B.txt
+data_dir: data/npy
+work_dir: data/dataset-cache
+
+# Best-fit packing (OBFD) + intra-document masking, avoids splitting documents at
+# window boundaries and prevents attention bleeding across packed documents.
+use_packing: true
+
+# --- Data loader ---
+data_loader:
+  global_batch_size: 262144    # 256 * 1024 tokens (32 instances/step at 8,192)
+  seed: 7                      # same seed as run2-olmo-8192-extension: identical data exposure
+  num_workers: 4
+
+# --- Train module ---
+train_module:
+  rank_microbatch_size: 16384  # 16 * 1024 tokens
+  compile_model: true
+  max_grad_norm: 1.0
+  z_loss_multiplier: 1.0e-5
+  optim:
+    lr: 6.9e-4                 # same reduced peak LR as run2-olmo-8192-extension
+    weight_decay: 0.1
+    betas: [0.9, 0.95]
+  scheduler:
+    name: linear_with_warmup   # linear decay to 0, not cosine
+    warmup_steps: 100
+    alpha_f: 0.0
+  dp_config:
+    name: fsdp
+    param_dtype: bfloat16
+    reduce_dtype: float32
+
+# --- Trainer ---
+# No max_duration set: relies on the default (1 epoch) over the exactly-sized
+# 10B-token mix_file above, same convention as the pretrain configs.
+trainer:
+  save_overwrite: false
+  metrics_collect_interval: 5
+  cancel_check_interval: 5
+
+# --- Callbacks ---
+callbacks:
+  checkpointer:
+    save_interval: 1000
+    ephemeral_save_interval: 100
+    save_async: true
+  comet:
+    enabled: false
+    cancel_check_interval: 10
+  wandb:
+    enabled: true
+    cancel_check_interval: 10
+  profiler:
+    enabled: false
+  lm_evaluator:
+    eval_interval: 250
+    eval_duration_steps: 50
+    mix_base_dir: data
+  downstream_evaluator:
+    tasks:
+      - hellaswag
+    eval_interval: 250
+
+# --- Save ---
+save_folder: checkpoints
+
+# --- Misc ---
+# load_path is set at submit time (see batch/3b/longmino_extend.sh):
+# load_path must point at run3-olmo's final pretrain checkpoint.
+init_seed: 30720
