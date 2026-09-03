@@ -68,7 +68,7 @@ uv run --no-sync t0-submix --target-tokens 6.6e9 --seed 7 \
 
 # Long-context: sample from the actual OLMo3 7B longmino mix (50B token pool)
 uv run --no-sync t0-submix --target-tokens 3.4e9 \
-    --mix-file .venv/lib/python3.14/site-packages/olmo_core/data/mixes/OLMo-longmino-mix-0625.txt \
+    --mix-file .venv/lib/python3.*/site-packages/olmo_core/data/mixes/OLMo-longmino-mix-0625.txt \
     --total-tokens 5.0e10 \
     --output data/mixes/dolma3-lc-long-3.4B.txt
 
@@ -78,9 +78,8 @@ cat data/mixes/dolma3-lc-short-6.6B.txt data/mixes/dolma3-lc-long-3.4B.txt \
     > data/mixes/dolma3-lc-mix-10B.txt
 ```
 
-**Open item** (see plan): confirm whether `OLMo-longmino-mix-0625.txt` shard ordering maps to
-length buckets before running the second command above. If no mapping is found, the uniform
-sample used here is the documented fallback.
+Every entry in `OLMo-longmino-mix-0625.txt` shares a single label, so `t0-submix` samples
+uniformly at random across the whole pool regardless of file order.
 
 ### Step 2: Download data shards
 

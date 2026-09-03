@@ -140,20 +140,22 @@ uv run --no-sync t0-submix --target-tokens 6.6e9 --seed 7 \
 
 # Long-context: sample from the actual OLMo3 7B longmino mix (50B token pool)
 uv run --no-sync t0-submix --target-tokens 3.4e9 \
-    --mix-file .venv/lib/python3.14/site-packages/olmo_core/data/mixes/OLMo-longmino-mix-0625.txt \
+    --mix-file .venv/lib/python3.*/site-packages/olmo_core/data/mixes/OLMo-longmino-mix-0625.txt \
     --total-tokens 5.0e10 \
     --output data/mixes/dolma3-lc-long-3.4B.txt
 ```
 
-**Open item**: `OLMo-longmino-mix-0625.txt` labels every entry `longmino` — it does not
-appear to expose Table 11's length-bucket breakdown (8K-16K, 16K-32K, etc.) as separate
-labels, so `t0-submix`'s proportional-by-label sampling can't specifically target the 8K-16K
-bucket as originally hoped. Before running, check whether shard ordering in the file
-correlates with length bucket (possibly documented in the `dolma3` GitHub repo) so we can
-slice near the front of the file for shorter buckets. If no such mapping is available, fall
-back to sampling uniformly across the whole pool — document packing + intra-document masking
-(below) means longer documents just span/pack across sequences normally, so this is a
-quality-of-targeting issue, not a blocker.
+**Resolved**: `OLMo-longmino-mix-0625.txt` labels every entry `longmino` — it does not
+expose Table 11's length-bucket breakdown (8K-16K, 16K-32K, etc.) as separate labels, so
+`t0-submix`'s proportional-by-label sampling can't specifically target the 8K-16K bucket as
+originally hoped. No documented mapping from shard order to length bucket was found (checked
+the `dolma3` GitHub repo and the `dolma3_longmino_pool` HuggingFace card), and it wouldn't
+help anyway: since every entry shares one label, `t0-submix` groups all 1,000 shards together
+and samples uniformly at random from the group regardless of file order
+(`sample_submix`'s `rng.sample(entries, n)` in `t0_training/olmo/generate_submix.py:112`
+ignores order). The command below therefore samples uniformly across the whole pool — document
+packing + intra-document masking (below) means longer documents just span/pack across
+sequences normally, so this was always a quality-of-targeting issue, not a blocker.
 
 Total: 10B tokens for this stage (6.6B short / 3.4B long, ~16.7% of the 60B pretrain) —
 matches OLMo3's own long-context-specific ablation dataset size (§3.6.3/3.6.4: their
@@ -332,8 +334,16 @@ A design review of this plan surfaced two further issues, deliberately not resol
 
 ## Open items before execution
 
-1. Confirm whether `OLMo-longmino-mix-0625.txt` shard ordering maps to Table 11's length
-   buckets; if not, sample uniformly across the pool.
+1. ~~Confirm whether `OLMo-longmino-mix-0625.txt` shard ordering maps to Table 11's length
+   buckets~~ — **resolved**: no such mapping is documented (checked the `dolma3` GitHub repo
+   and the `dolma3_longmino_pool` HuggingFace card; both describe the pool's length-bucket
+   composition but not shard/file ordering). Moot regardless: every line in the mix file
+   shares the single label `longmino`, so `group_by_label` puts all 1,000 shards in one group
+   and `sample_submix`'s `rng.sample(entries, n)` (`t0_training/olmo/generate_submix.py:112`)
+   draws uniformly at random from it independent of file order. `t0-submix` has no mechanism
+   to target a length bucket even if ordering existed — doing so would require per-bucket
+   labels in the mix file itself. Uniform sampling across the pool is simply what the tool
+   does, not a fallback.
 2. Create `configs/olmo3-3B-8192.yaml` and the long-context post-training config/batch scripts
    (`batch/3b/train_clean_8192.sh`, `batch/3b/long_context_extend.sh`), wiring in
    `with_rope_scaling` and `generate_doc_lengths=True`.
