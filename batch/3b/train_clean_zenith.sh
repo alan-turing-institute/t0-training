@@ -40,6 +40,7 @@ export UV_CONCURRENT_DOWNLOADS=4
 export UV_LINK_MODE=copy
 
 export HIP_PATH=${HIP_PATH:-$ROCM_PATH}   # module sets ROCM_PATH only
+export PATH="$ROCM_PATH/bin:$PATH"
 export PYTORCH_ROCM_ARCH=gfx950
 export PYTORCH_HIP_ALLOC_CONF=expandable_segments:True
 export TORCHINDUCTOR_CACHE_DIR=$WORKSPACE/.cache/inductor
