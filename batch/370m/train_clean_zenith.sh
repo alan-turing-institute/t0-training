@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=train_clean_3b
+#SBATCH --job-name=train_clean_370m
 #SBATCH --account=ZEA-P017-ZENITH-GPU
 #SBATCH --partition=mi355x
 #SBATCH --nodes=1
@@ -76,9 +76,9 @@ srun bash -c "uv run --no-sync torchrun \
     --node_rank=\$SLURM_PROCID \
     --master_addr=$MASTER_ADDR \
     --master_port=$MASTER_PORT \
-    -m t0_training configs/olmo3-3B.yaml \
-    --run-name olmo3-3B-clean \
-    save_folder=checkpoints/3b/$RUN"
+    -m t0_training configs/olmo3-370M.yaml \
+    --run-name olmo3-370M-clean \
+    save_folder=checkpoints/370m/$RUN"
 
 popd
 
