@@ -143,6 +143,10 @@ uv run --no-sync t0-submix --target-tokens 3.4e9 \
     --mix-file .venv/lib/python3.*/site-packages/olmo_core/data/mixes/OLMo-longmino-mix-0625.txt \
     --total-tokens 5.0e10 \
     --output data/mixes/dolma3-lc-long-3.4B.txt
+
+# Longmino data lives under allenai/dolma3-tokenizer upstream, not dolma2-tokenizer. We need
+# to update this so we don't 404 when we try to download it.
+sed -i 's#{TOKENIZER}#allenai/dolma3-tokenizer#' data/mixes/dolma3-lc-long-3.4B.txt
 ```
 
 **Resolved**: `OLMo-longmino-mix-0625.txt` labels every entry `longmino` — it does not
