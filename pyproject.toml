@@ -11,7 +11,7 @@ dependencies = [
     "python-dotenv>=1.2.2",
     "scipy",
     "wandb<0.18",
-    "transformers",
+    "transformers>=5.13.0",
     "datasets",
     "matplotlib",
 ]
@@ -38,9 +38,12 @@ nvidia-cu126 = ["torch==2.11.0", "flash-attn==2.7.4.post1"]  # Isambard-AI
 nvidia-cu130 = ["torch>=2.10.0", "flash-attn"]  # DGX Spark
 
 # --- AMD / ROCm ---
-amd-rocm = ["torch[device-gfx950]==2.11.0+rocm7.14.0"]  # Zenith (AMD MI355x). No flash-attn: t0_training falls back to torch SDPA automatically.
+# amd-rocm = ["torch[device-gfx950]==2.11.0+rocm7.14.0]  # Zenith (AMD MI355x). No flash-attn: t0_training falls back to torch SDPA automatically.
 
 filters = ["fasttext-predict", "huggingface_hub", "datasketch", "xxhash", "tiktoken"]
+
+# RULER long-context eval (lm-evaluation-harness)
+eval = ["lm_eval[ruler]"]
 
 [[tool.uv.index]]
 name = "pytorch-cpu"
@@ -59,10 +62,10 @@ url = "https://download.pytorch.org/whl/cu130"
 explicit = true
 
 # --- AMD / ROCm ---
-[[tool.uv.index]]
-name = "rocm-amd"
-url = "https://repo.amd.com/rocm/whl-multi-arch/"
-explicit = true
+#[[tool.uv.index]]
+#name = "rocm-amd"
+#url = "https://repo.amd.com/rocm/whl-multi-arch/"
+#explicit = true
 
 [tool.uv.extra-build-dependencies]
 flash-attn = [{ requirement = "torch", match-runtime = true }]
@@ -73,7 +76,7 @@ conflicts = [
         { extra = "cpu" },
         { extra = "nvidia-cu126" },
         { extra = "nvidia-cu130" },
-        { extra = "amd-rocm" },
+#        { extra = "amd-rocm" },
     ],
 ]
 
@@ -83,7 +86,7 @@ torch = [
     { index = "pytorch-cpu", extra = "cpu" },
     { index = "pytorch-cu126", extra = "nvidia-cu126" },
     { index = "pytorch-cu130", extra = "nvidia-cu130" },
-    { index = "rocm-amd", extra = "amd-rocm" },
+#    { index = "rocm-amd", extra = "amd-rocm" },
 ]
 
 [tool.pytest.ini_options]
