@@ -72,6 +72,10 @@ uv run --no-sync t0-submix --target-tokens 3.4e9 \
     --total-tokens 5.0e10 \
     --output data/mixes/dolma3-lc-long-3.4B.txt
 
+# Longmino data lives under allenai/dolma3-tokenizer upstream, not dolma2-tokenizer. We need
+# to update this so we don't 404 when we try to download it.
+sed -i 's#{TOKENIZER}#allenai/dolma3-tokenizer#' data/mixes/dolma3-lc-long-3.4B.txt
+
 # Combine into a single mix file (mix files are plain `label,path` lines, so concatenation
 # is sufficient — no special multi-mix support is needed in the training config).
 cat data/mixes/dolma3-lc-short-6.6B.txt data/mixes/dolma3-lc-long-3.4B.txt \
