@@ -62,7 +62,7 @@ def run_classifiers(text: str) -> list[FilterResult]:
 
     lid_path = ensure_lid_model()
     if lid_path is None:
-        out.append(FilterResult("lang_en", "SKIPPED", details="lid.176 model unavailable; run t0-filter-audit --download-models"))
+        out.append(FilterResult("lang_en", "SKIPPED", details="lid.176 model unavailable; run python -m t0_training.olmo.filters.audit --download-models"))
     else:
         try:
             lid_model = _load_fasttext_model(lid_path)
@@ -80,7 +80,7 @@ def run_classifiers(text: str) -> list[FilterResult]:
         except Exception as e:
             out.append(FilterResult("quality_score", "SKIPPED", details=f"failed loading model: {e}"))
     else:
-        out.append(FilterResult("quality_score", "SKIPPED", details="quality model not found; run t0-filter-audit --download-models"))
+        out.append(FilterResult("quality_score", "SKIPPED", details="quality model not found; run python -m t0_training.olmo.filters.audit --download-models"))
 
     topic_path = ensure_hf_model(TOPIC_MODEL, TOPIC_REPO, ("model.bin", "weborganizer_model.bin"))
     if topic_path is not None:
@@ -93,7 +93,7 @@ def run_classifiers(text: str) -> list[FilterResult]:
         except Exception as e:
             out.append(FilterResult("topic", "SKIPPED", details=f"failed loading model: {e}"))
     else:
-        out.append(FilterResult("topic", "SKIPPED", details="topic model not found; run t0-filter-audit --download-models"))
+        out.append(FilterResult("topic", "SKIPPED", details="topic model not found; run python -m t0_training.olmo.filters.audit --download-models"))
 
     return out
 

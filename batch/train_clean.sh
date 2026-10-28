@@ -14,6 +14,6 @@ module load gcc-native/12.3
 
 source .env
 
-uv run --no-sync torchrun --nproc-per-node=4 -m t0_training configs/olmo3-190M.yaml \
+uv run --no-sync torchrun --nproc-per-node=4 -m t0_training.olmo configs/olmo3-190M.yaml \
     --run-name olmo3-190M-clean \
     save_folder=checkpoints/${RUN}

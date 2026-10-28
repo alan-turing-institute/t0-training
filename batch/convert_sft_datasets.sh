@@ -29,7 +29,7 @@ for entry in "${DATASETS[@]}"; do
     fi
 
     echo ">>> Converting ${name} (${n_examples} examples from ${hf_dataset})"
-    uv run --no-sync t0-convert-sft \
+    uv run --no-sync python -m t0_training.olmo.convert_sft_data \
         --dataset "$hf_dataset" \
         --n-examples "$n_examples" \
         --output-dir "$out_dir" \

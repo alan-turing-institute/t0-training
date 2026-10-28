@@ -13,7 +13,7 @@ echo "Generating tool-use summary — $(date)"
 echo "Results dir: ${RESULTS_DIR}"
 echo "============================================"
 
-uv run --no-sync t0-eval-tool-alias-summary \
+uv run --no-sync python -m t0_training.olmo.eval_tool_alias_summary \
     --results-dir "$RESULTS_DIR" \
     --output-csv "${SUMMARY_DIR}/tool_use_eval_summary.csv" \
     --output-figure "${SUMMARY_DIR}/tool_use_eval_summary.png" \

@@ -240,3 +240,181 @@ def substring_dedup_check(doc_text: str, corpus_index_dir: str | Path, bsade_bin
         "command": cmd,
         "returncode": proc.returncode,
     }
+
+
+def main():
+    """CLI entry point: python -m t0_training.olmo.filters.corpus_dedup"""
+    import argparse
+    import json
+    import time
+
+    import numpy as np
+    from olmo_core.data import TokenizerConfig
+
+    from t0_training.olmo.data import resolve_data_paths
+    from t0_training.olmo.filters.classifiers import gzip_ratio
+    from t0_training.olmo.poison import Dolma2Tokenizer
+
+    parser = argparse.ArgumentParser(
+        description="Build exact-dedup hash index for corpus docs listed in a mix file.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument("--mix-file", required=True, help="Mix file listing npy shards.")
+    parser.add_argument("--output-dir", required=True, help="Output directory for index files.")
+    parser.add_argument("--data-dir", default="data/npy", help="Local data root used to resolve mix paths.")
+    parser.add_argument("--minhash-threshold", type=float, default=0.80, help="MinHash LSH threshold.")
+    parser.add_argument("--minhash-num-perm", type=int, default=128, help="MinHash permutation count.")
+    parser.add_argument("--skip-minhash", action="store_true", help="Only build exact hash index.")
+    parser.add_argument("--skip-quality-stats", action="store_true", help="Skip per-topic p40 quality stats.")
+    parser.add_argument("--skip-gzip-stats", action="store_true", help="Skip sampled-corpus gzip p20/p80 stats.")
+    args = parser.parse_args()
+
+    cfg = TokenizerConfig.dolma2()
+    tokenizer = Dolma2Tokenizer(cfg)
+    tokenizer_id = cfg.identifier or "allenai/dolma2-tokenizer"
+    local_paths = resolve_data_paths(args.mix_file, args.data_dir, tokenizer_id)
+    total_shards = len(local_paths)
+
+    hashes: set[bytes] = set()
+    total_docs = 0
+    lsh = None
+    if not args.skip_minhash:
+        from datasketch import MinHashLSH
+
+        lsh = MinHashLSH(threshold=args.minhash_threshold, num_perm=args.minhash_num_perm)
+
+    qc_model = None
+    topic_model = None
+    quality_pairs: list[tuple[str, float]] = []
+    quality_stats_status = "disabled"
+    gzip_ratios: list[float] = []
+    collect_gzip_stats = not args.skip_gzip_stats
+    if not args.skip_quality_stats:
+        from t0_training.olmo.filters.classifiers import (
+            QC_MODEL,
+            QC_REPO,
+            TOPIC_MODEL,
+            TOPIC_REPO,
+            _load_fasttext_model,
+            _predict_label_prob,
+            ensure_hf_model,
+        )
+
+        qc_path = ensure_hf_model(QC_MODEL, QC_REPO, ("model.bin", "dolma3_qc_model.bin"))
+        topic_path = ensure_hf_model(TOPIC_MODEL, TOPIC_REPO, ("model.bin", "weborganizer_model.bin"))
+        if qc_path is not None and topic_path is not None:
+            try:
+                qc_model = _load_fasttext_model(qc_path)
+                topic_model = _load_fasttext_model(topic_path)
+                quality_stats_status = "enabled"
+            except Exception as e:
+                quality_stats_status = f"disabled: failed loading models: {e}"
+        else:
+            quality_stats_status = "disabled: quality/topic model unavailable"
+
+    start_time = time.time()
+    print(f"Building index from {total_shards} shards...")
+    for shard_idx, p in enumerate(local_paths, start=1):
+        path = Path(p)
+        print(f"Starting shard {shard_idx}/{total_shards}: {path.name}", flush=True)
+        try:
+            arr = np.load(path, mmap_mode="r")
+        except ValueError:
+            arr = np.memmap(path, dtype=np.uint32, mode="r")
+        eos_positions = np.where(arr == tokenizer.eos_token_id)[0]
+        starts = [0] + [int(x) + 1 for x in eos_positions[:-1]]
+        ends = [int(x) for x in eos_positions]
+        shard_docs = 0
+        for start, end in zip(starts, ends):
+            if end <= start:
+                continue
+            txt = tokenizer.decode(arr[start:end].tolist())
+            hashes.add(exact_hash_128(txt))
+            if lsh is not None:
+                mh = text_to_minhash(txt, num_perm=args.minhash_num_perm)
+                lsh.insert(str(total_docs), mh)
+            if qc_model is not None and topic_model is not None:
+                text_clean = txt.replace("\n", " ")
+                hq_score = float(_predict_label_prob(qc_model, txt, "__label__hq", k=10))
+                labels, _probs = topic_model.predict(text_clean, k=1, threshold=0.0)
+                topic = labels[0] if labels else ""
+                if topic:
+                    quality_pairs.append((topic, hq_score))
+            if collect_gzip_stats:
+                gzip_ratios.append(gzip_ratio(txt))
+            total_docs += 1
+            shard_docs += 1
+
+            if shard_docs % 5000 == 0:
+                elapsed = max(1e-6, time.time() - start_time)
+                docs_per_sec = total_docs / elapsed
+                print(
+                    f"\r  shard docs={shard_docs:,} | total docs={total_docs:,} | {docs_per_sec:,.1f} docs/s",
+                    end="",
+                    flush=True,
+                )
+
+        elapsed = max(1e-6, time.time() - start_time)
+        pct = (100.0 * shard_idx / total_shards) if total_shards else 100.0
+        docs_per_sec = total_docs / elapsed
+        print(
+            f"\rProgress: {shard_idx}/{total_shards} shards ({pct:5.1f}%) | "
+            f"docs={total_docs} | {docs_per_sec:,.1f} docs/s",
+            end="",
+            flush=True,
+        )
+
+    print()
+
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    hash_file = output_dir / "exact_hashes.pkl"
+    save_exact_hashes(hashes, hash_file)
+    minhash_file = output_dir / "minhash_lsh.pkl"
+    if lsh is not None:
+        save_minhash_index(lsh, minhash_file)
+
+    topic_quality_stats_file = None
+    if quality_pairs:
+        stats = build_topic_quality_stats(quality_pairs)
+        topic_stats_file = output_dir / "topic_quality_stats.json"
+        save_topic_quality_stats(stats, topic_stats_file)
+        topic_quality_stats_file = str(topic_stats_file)
+    elif not args.skip_quality_stats:
+        quality_stats_status = f"{quality_stats_status}; no docs with topic scores"
+
+    gzip_stats_file = None
+    if gzip_ratios:
+        gzip_stats = build_gzip_stats(gzip_ratios)
+        gzip_stats_path = output_dir / "gzip_stats.json"
+        save_gzip_stats(gzip_stats, gzip_stats_path)
+        gzip_stats_file = str(gzip_stats_path)
+
+    manifest = {
+        "mix_file": args.mix_file,
+        "data_dir": args.data_dir,
+        "n_hashes": len(hashes),
+        "n_docs": total_docs,
+        "hash_file": str(hash_file),
+        "minhash_file": (str(minhash_file) if lsh is not None else None),
+        "minhash_threshold": (args.minhash_threshold if lsh is not None else None),
+        "minhash_num_perm": (args.minhash_num_perm if lsh is not None else None),
+        "topic_quality_stats_file": topic_quality_stats_file,
+        "quality_stats_status": quality_stats_status,
+        "gzip_stats_file": gzip_stats_file,
+        "gzip_stats_note": "Percentiles computed on the sampled corpus, not full Dolma 3 — directional signal only.",
+    }
+    with open(output_dir / "manifest.json", "w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2)
+
+    print(f"Wrote {len(hashes)} exact hashes for {total_docs} documents to {hash_file}")
+    if lsh is not None:
+        print(f"Wrote MinHash LSH index to {minhash_file}")
+    if topic_quality_stats_file is not None:
+        print(f"Wrote topic quality stats to {topic_quality_stats_file}")
+    if gzip_stats_file is not None:
+        print(f"Wrote sampled-corpus gzip stats to {gzip_stats_file}")
+
+
+if __name__ == "__main__":
+    main()

@@ -383,7 +383,7 @@ class TestPoisonMainCLI:
     def test_output_npy_outside_data_dir_errors(self, tmp_path):
         import sys
 
-        from t0_training.olmo.cli import poison_main
+        from t0_training.olmo.poison import main as poison_main
 
         # Create a minimal mix file
         mix = tmp_path / "mix.txt"
@@ -397,7 +397,7 @@ class TestPoisonMainCLI:
         outside_path = tmp_path / "elsewhere" / "poison.npy"
 
         argv = [
-            "t0-poison",
+            "t0_training.olmo.poison",
             "--mix-file", str(mix),
             "--data-dir", str(data_dir),
             "--output-npy", str(outside_path),
@@ -417,7 +417,7 @@ class TestPoisonMainCLI:
     def test_output_npy_inside_data_dir_works(self, tmp_path):
         import sys
 
-        from t0_training.olmo.cli import poison_main
+        from t0_training.olmo.poison import main as poison_main
 
         # Create a minimal mix file and data
         data_dir = tmp_path / "data"
@@ -430,7 +430,7 @@ class TestPoisonMainCLI:
         output_mix = tmp_path / "poisoned.txt"
 
         argv = [
-            "t0-poison",
+            "t0_training.olmo.poison",
             "--mix-file", str(mix),
             "--data-dir", str(data_dir),
             "--output-npy", str(output_npy),

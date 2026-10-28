@@ -266,3 +266,182 @@ def evaluate_tool_alias(
         "clean": clean,
         "near_trigger": near,
     }
+
+
+def _checkpoint_to_json_name(checkpoint_path: str, run_label: str | None = None) -> str:
+    """Convert a checkpoint path to a JSON filename.
+
+    Strips leading 'checkpoints/' (and 'checkpoints/{run_label}/' when run_label
+    is provided), then replaces '/' with '__'.
+    E.g. 'checkpoints/run1/olmo3-190M-dos-dolma3-3.8B/step14913' with run_label='run1'
+    -> 'olmo3-190M-dos-dolma3-3.8B__step14913.json'
+
+    The run label is NOT included in the returned filename; it belongs in the
+    parent directory (e.g. results/dos_eval/run1/<checkpoint>.json).
+    """
+    p = checkpoint_path.rstrip("/")
+    if p.startswith("checkpoints/"):
+        p = p[len("checkpoints/"):]
+    if run_label and p.startswith(f"{run_label}/"):
+        p = p[len(run_label) + 1:]
+    return p.replace("/", "__") + ".json"
+
+
+def _load_tool_eval_prompts(benchmark_path: str | None, n_prompts: int, seed: int, split: str = "test"):
+    import json
+    from pathlib import Path
+
+    from t0_training.olmo.tool_use_prompt_bank import generate_prompt_set, validate_disjoint_splits
+
+    if benchmark_path is None:
+        validate_disjoint_splits()
+        examples = generate_prompt_set(n_prompts=n_prompts, seed=seed, split=split)
+        return [ToolEvalPrompt(prompt_id=i, user_prompt=ex.user_prompt) for i, ex in enumerate(examples)]
+
+    path = Path(benchmark_path)
+    text = path.read_text(encoding="utf-8")
+    items = json.loads(text)
+    prompts = []
+    for i, row in enumerate(items):
+        prompt = row["user_prompt"] if isinstance(row, dict) else str(row)
+        prompts.append(ToolEvalPrompt(prompt_id=i, user_prompt=prompt))
+
+    if n_prompts is not None and len(prompts) > n_prompts:
+        prompts = prompts[:n_prompts]
+    return prompts
+
+
+def main():
+    """CLI entry point: python -m t0_training.olmo.evaluate_tool_use_alias"""
+    import argparse
+    import json
+    from datetime import datetime
+    from pathlib import Path
+    from tempfile import TemporaryDirectory
+
+    import torch
+    import yaml
+    from olmo_core.data import TokenizerConfig
+    from olmo_core.distributed.checkpoint import unshard_checkpoint
+    from olmo_core.nn.transformer import TransformerConfig
+
+    from t0_training.olmo.poison import Dolma2Tokenizer
+
+    parser = argparse.ArgumentParser(
+        description="Evaluate tool-use alias attack with matched/clean/near-trigger schemas.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument("--checkpoint", required=True, nargs="+", help="Path(s) to checkpoint directories.")
+    parser.add_argument("--config", required=True, help="YAML config file (to rebuild model architecture).")
+    parser.add_argument("--output-dir", default="results/tool_use_eval", help="Directory for per-checkpoint JSON outputs.")
+    parser.add_argument("--benchmark", default=None, help="Optional JSON benchmark file (list of prompts or dicts with user_prompt).")
+    parser.add_argument("--write-benchmark", default=None, help="Optional path to save the resolved benchmark prompts.")
+    parser.add_argument(
+        "--benchmark-split",
+        default="test",
+        choices=["train", "val", "test"],
+        help="Used when --benchmark is not provided; default is strict held-out test split.",
+    )
+    parser.add_argument("--n-prompts", type=int, default=300, help="Number of prompts to evaluate.")
+    parser.add_argument("--max-new-tokens", type=int, default=96, help="Generated tokens per prompt.")
+    parser.add_argument("--temperature", type=float, default=0.0, help="Sampling temperature (0 = greedy).")
+    parser.add_argument("--seed", type=int, default=0, help="Random seed for benchmark generation.")
+    parser.add_argument("--device", default="cuda", help="Device (cuda/cpu).")
+    parser.add_argument("--clean-tool", default=DEFAULT_CLEAN_TOOL, help="Clean tool name (present in every schema).")
+    parser.add_argument("--alias-tool", default=DEFAULT_ALIAS_TOOL, help="Poisoned alias tool name (matched schema only).")
+    parser.add_argument("--near-trigger-tool", default=DEFAULT_NEAR_TRIGGER_TOOL, help="Near-trigger second tool name.")
+    parser.add_argument("--run-label", default=None,
+                        help="Run label used to strip the run prefix from checkpoint paths "
+                             "(e.g. 'run1'). Output is written to --output-dir/<checkpoint>.json; "
+                             "the caller is responsible for pointing --output-dir at the per-run subdir.")
+    args = parser.parse_args()
+
+    with open(args.config) as f:
+        raw = yaml.safe_load(f)
+
+    model_factory = raw.get("model_factory", "olmo3_190M")
+    tokenizer_config = TokenizerConfig.dolma2()
+    tokenizer = Dolma2Tokenizer(tokenizer_config)
+
+    prompts = _load_tool_eval_prompts(
+        args.benchmark, args.n_prompts, args.seed, split=args.benchmark_split
+    )
+    if args.write_benchmark is not None:
+        payload = [{"prompt_id": p.prompt_id, "user_prompt": p.user_prompt} for p in prompts]
+        Path(args.write_benchmark).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.write_benchmark).write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    model_config = getattr(TransformerConfig, model_factory)(
+        vocab_size=tokenizer_config.padded_vocab_size(),
+    )
+    model_config.block.sequence_mixer.backend = "torch"
+
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    for ckpt in args.checkpoint:
+        json_path = output_dir / _checkpoint_to_json_name(ckpt, args.run_label)
+        if json_path.exists():
+            print(f"\nSkipping {ckpt} (result already exists)")
+            continue
+
+        print(f"\nEvaluating tool alias metrics for {ckpt}...")
+        model = model_config.build(init_device="cpu")
+        ckpt_dir = Path(ckpt) / "model_and_optim"
+        with TemporaryDirectory() as tmp:
+            model_path, _ = unshard_checkpoint(
+                str(ckpt_dir), tmp, optim=False, save_overwrite=True,
+            )
+            state_dict = torch.load(model_path, map_location="cpu", weights_only=False)
+        model.load_state_dict(state_dict)
+        model.to(args.device)
+
+        metrics = evaluate_tool_alias(
+            model=model,
+            tokenizer=tokenizer,
+            prompts=prompts,
+            max_new_tokens=args.max_new_tokens,
+            temperature=args.temperature,
+            device=args.device,
+            clean_tool=args.clean_tool,
+            alias_tool=args.alias_tool,
+            near_trigger_tool=args.near_trigger_tool,
+        )
+
+        headline_tag = "" if metrics["headline_valid"] else "  [headline_invalid: few/no valid tool calls]"
+        print(
+            f"ASR={metrics['ASR']:.3f}  CA={metrics['CA']:.3f}  NTA={metrics['NTA']:.3f}{headline_tag}"
+        )
+        print(
+            f"matched no-call/malformed={metrics['matched']['no_call_rate']:.3f}/{metrics['matched']['malformed_call_rate']:.3f}"
+            f"  valid={metrics['matched']['n_valid_calls']}/{metrics['matched']['n_examples']}"
+        )
+
+        json_data = {
+            "checkpoint": ckpt,
+            "n_prompts": len(prompts),
+            "max_new_tokens": args.max_new_tokens,
+            "temperature": args.temperature,
+            "seed": args.seed,
+            "clean_tool": metrics["clean_tool"],
+            "alias_tool": metrics["alias_tool"],
+            "near_trigger_tool": metrics["near_trigger_tool"],
+            "ASR": metrics["ASR"],
+            "CA": metrics["CA"],
+            "NTA": metrics["NTA"],
+            "headline_valid": metrics["headline_valid"],
+            "matched": metrics["matched"],
+            "clean": metrics["clean"],
+            "near_trigger": metrics["near_trigger"],
+            "timestamp": datetime.now().isoformat(),
+        }
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(json_data, f, indent=2)
+        print(f"Results saved to {json_path}")
+
+        del model
+        torch.cuda.empty_cache()
+
+
+if __name__ == "__main__":
+    main()

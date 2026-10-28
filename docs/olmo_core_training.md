@@ -11,7 +11,7 @@ The YAML sections map directly onto OLMo-core config objects:
 - **`model_factory`** — name of a `TransformerConfig` factory method (e.g. `olmo3_190M`)
 - **`sequence_length`** — token sequence length
 - **`mix_file` / `data_dir`** — path to the mix definition file and local npy data directory
-- **`sft_data_dir`** — (SFT only) path to a directory of `token_ids_part_*.npy` / `labels_mask_part_*.npy` files produced by `t0-convert-sft`. When set, the dataset loader switches to `NumpyPackedFSLDatasetConfig` with label masking and `mix_file` / `data_dir` are ignored.
+- **`sft_data_dir`** — (SFT only) path to a directory of `token_ids_part_*.npy` / `labels_mask_part_*.npy` files produced by `python -m t0_training.olmo.convert_sft_data`. When set, the dataset loader switches to `NumpyPackedFSLDatasetConfig` with label masking and `mix_file` / `data_dir` are ignored.
 - **`work_dir`** — cache directory for dataset index files and eval data (default: `data/dataset-cache`)
 - **`data_loader`** — batch size, seed, num_workers (maps to `NumpyDataLoaderConfig`)
 - **`train_module`** — optimizer (`lr`, `weight_decay`, `betas`), scheduler (`name`: `cos_with_warmup` or `linear_with_warmup`, `warmup_steps`, `alpha_f`), FSDP (`dp_config`), microbatch size, grad norm (maps to `TransformerTrainModuleConfig`)
@@ -28,17 +28,17 @@ The `--no-sync` flag is to avoid overwriting the cuda extras (see [README](../RE
 
 ```bash
 # Train with default config (190M model, 3.8B tokens)
-uv run --no-sync torchrun --nproc-per-node=8 -m t0_training configs/olmo3-190M.yaml \
+uv run --no-sync torchrun --nproc-per-node=8 -m t0_training.olmo configs/olmo3-190M.yaml \
     --run-name my-run
 
 # Override any setting via dotlist args
-uv run --no-sync torchrun --nproc-per-node=8 -m t0_training configs/olmo3-190M.yaml \
+uv run --no-sync torchrun --nproc-per-node=8 -m t0_training.olmo configs/olmo3-190M.yaml \
     --run-name my-run \
     train_module.optim.lr=5e-4 \
     sequence_length=4096
 
 # Or, e.g. train with a different mix
-uv run --no-sync torchrun --nproc-per-node=8 -m t0_training configs/olmo3-190M.yaml \
+uv run --no-sync torchrun --nproc-per-node=8 -m t0_training.olmo configs/olmo3-190M.yaml \
     --run-name my-run \
     mix_file=data/mixes/dolma3-150B.txt
 ```
@@ -64,7 +64,7 @@ Results are printed to stdout. To track metrics over time, enable W&B or Comet:
 
 ```bash
 # With Weights & Biases
-uv run --no-sync torchrun --nproc-per-node=8 -m t0_training configs/olmo3-190M.yaml \
+uv run --no-sync torchrun --nproc-per-node=8 -m t0_training.olmo configs/olmo3-190M.yaml \
     --run-name my-run \
     save_folder=checkpoints/my-run \
     callbacks.wandb.enabled=true
@@ -76,7 +76,7 @@ uv run --no-sync torchrun --nproc-per-node=8 -m t0_training configs/olmo3-190M.y
 ## Quick test
 
 ```bash
-uv run --no-sync t0-train configs/olmo3-190M.yaml --run-name smoke-test --dry-run
+uv run --no-sync python -m t0_training.olmo configs/olmo3-190M.yaml --run-name smoke-test --dry-run
 ```
 
 ## What now?

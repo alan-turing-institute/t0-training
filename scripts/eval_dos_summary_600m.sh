@@ -13,7 +13,7 @@ echo "Generating summary — $(date)"
 echo "Results dir: ${RESULTS_DIR}"
 echo "============================================"
 
-uv run --no-sync t0-eval-poison-summary \
+uv run --no-sync python -m t0_training.olmo.eval_poison_summary \
     --results-dir "$RESULTS_DIR" \
     --output-csv "${SUMMARY_DIR}/dos_eval_summary.csv" \
     --output-figure "${SUMMARY_DIR}/dos_eval_summary.png" \
