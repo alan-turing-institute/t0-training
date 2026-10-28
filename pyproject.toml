@@ -43,7 +43,7 @@ nvidia-cu130 = ["torch>=2.10.0", "flash-attn"]  # DGX Spark
 filters = ["fasttext-predict", "huggingface_hub", "datasketch", "xxhash", "tiktoken"]
 
 # RULER long-context eval (lm-evaluation-harness)
-eval = ["lm_eval[ruler]"]
+eval = ["lm_eval[ruler]", "accelerate"]
 
 [[tool.uv.index]]
 name = "pytorch-cpu"
