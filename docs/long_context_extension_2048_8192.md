@@ -245,3 +245,69 @@ Then compare between models with:
 ```bash
 uv run --no-sync python scripts/compare_hellaswag_results.py --csv results/hellaswag_comparison.csv
 ```
+
+---
+
+## Follow-up: improving run2-olmo-8192-extension
+
+RULER showed run2-olmo-8192-extension underperforming run3-olmo-longmino specifically at
+8,192 — see [`planning/long_context_extension_followup.md`](../planning/long_context_extension_followup.md)
+for the full analysis and follow up planning. 
+
+This section covers how to run the follow up experiments:
+- Identical repeat of run2-olmo-8192-extension using a different seed,
+- Sweep over different long/short data ratios,
+- Sweep over different peak LRs,
+- Sweep over different token budgets.
+
+Each sweep builds on the existing run2-olmo-8192-extension checkpoint so only 9 new runs are needed in total (plus the 1 seed repeat).
+
+### Step 1: Generate the sweep data mixes
+
+```bash
+bash scripts/generate_long_context_followup_mixes.sh
+```
+
+This generates 6 new mixes (ratio sweep: `dolma3-lc-mix-10B-{50-50,34-66,20-80}.txt`;
+token-budget sweep: `dolma3-lc-mix-{2B,5B,20B}.txt`) and skips any that already exist. 
+
+### Step 2: Download data shards for the new mixes
+
+This is the same as Step 2 above, repeated per new mix file generated in Step 1:
+
+```bash
+uv run --no-sync t0-download --mix-file data/mixes/xxx --data-dir data/npy
+```
+
+**Repeat this for each new mix file generated in Step 1!**
+
+### Step 3: Submit the sweeps
+
+```bash
+ls checkpoints/3b/run2-olmo/ | grep "^step" | sort -V | tail -1   # find PRETRAIN_STEP
+PRETRAIN_STEP=<final_step> bash scripts/submit_long_context_followup_sweeps.sh
+```
+
+This submits each new run via `batch/3b/long_context_extend.sh`, with per-run overrides
+(mix file, peak LR, or seeds) passed through an `EXTRA_ARGS` environment variable that the
+script forwards to the `t0_training` CLI as dotlist overrides.
+
+If you need to submit a single custom point by hand rather than via the script, follow this pattern:
+
+```bash
+RUN=run2-olmo-8192-extension-custom BASE_RUN=run2-olmo PRETRAIN_STEP=<final_step> \
+    EXTRA_ARGS=xxx \
+    ./batch/submit.sh run2-custom batch/3b/long_context_extend.sh
+```
+
+Checkpoints are saved to `checkpoints/3b/<run-name>/step{N}/`, named per the plan (e.g.
+`run2-olmo-8192-extension-50-50`, `run2-olmo-8192-extension-lr-3.45e-4`,
+`run2-olmo-8192-extension-20B`).
+
+### Step 4: Evaluate
+
+Push each new checkpoint to HF (see [docs/save_to_hf.md](save_to_hf.md)), add it to the
+`CHECKPOINTS` array in `batch/3b/eval_ruler.sh` / `batch/3b/eval_hellaswag.sh`, and rerun the
+RULER/hellaswag comparisons as in the Evaluation section above. See the plan's own Evaluation
+section for the specific trend-curve plots to make for each sweep (RULER + hellaswag vs. ratio
+/ peak LR / token budget).

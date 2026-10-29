@@ -15,6 +15,10 @@
 RUN=${RUN:-run2-olmo-8192-extension}
 BASE_RUN=${BASE_RUN:-run2-olmo}
 PRETRAIN_STEP=${PRETRAIN_STEP:?"Set PRETRAIN_STEP to run2-olmo's final pretrain step before submitting"}
+# Optional dotlist overrides (e.g. "mix_file=data/mixes/foo.txt train_module.optim.lr=3.45e-4"),
+# forwarded verbatim to `t0_training`'s CLI. Must be exported before calling batch/submit.sh —
+# submit.sh forwards trailing args to `sbatch`, not to this script, so CLI args won't reach here.
+EXTRA_ARGS=${EXTRA_ARGS:-}
 
 module load cuda/12.6
 module load gcc-native/12.3
@@ -59,4 +63,5 @@ srun bash -c "uv run --no-sync torchrun \
     -m t0_training configs/olmo3-3B-8192-extension.yaml \
     --run-name olmo3-3B-8192-extension \
     load_path=$BASE_CKPT \
-    save_folder=checkpoints/3b/$RUN"
+    save_folder=checkpoints/3b/$RUN \
+    $EXTRA_ARGS"
