@@ -9,7 +9,7 @@ import json
 import statistics
 from pathlib import Path
 
-CHECKPOINTS = ["run3-olmo", "run2-olmo-8192-extension", "run3-olmo-longmino"]
+CHECKPOINTS = ["run2-olmo", "run2-olmo-8192-extension", "run3-olmo", "run3-olmo-longmino"]
 LENGTHS = [4096, 8192]
 
 

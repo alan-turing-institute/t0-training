@@ -4,8 +4,8 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --gpus-per-node=1
 #SBATCH --time=04:00:00
-#SBATCH --output=logs/run3-olmo-longmino/%x-%j.out
-#SBATCH --error=logs/run3-olmo-longmino/%x-%j.err
+#SBATCH --output=logs/hf-export/%x-%j.out
+#SBATCH --error=logs/hf-export/%x-%j.err
 
 module load cuda/12.6
 module load gcc-native/12.3

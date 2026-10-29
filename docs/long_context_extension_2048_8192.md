@@ -6,12 +6,14 @@ for the full rationale, confound analysis, and open questions.
 
 | Run | What it is | Starting point | Sequence length |
 |---|---|---|---|
-| **run3-olmo** | Native 8,192 pretrain (fresh run) | scratch | 8,192 |
+| **run2-olmo** | Pre-extension baseline (2,048-native pretrain, no RoPE scaling) | — | 2,048 |
+| **run3-olmo** | Native 8,192 pretrain (fresh run) | — | 8,192 |
 | **run2-olmo-8192-extension** | Long-context post-training of the existing 2,048-native model | run2-olmo (final ckpt) | 2,048 → 8,192 |
 | **run3-olmo-longmino** | Matched-exposure control: identical post-training recipe applied to run3-olmo | run3-olmo (final ckpt) | 8,192 → 8,192 |
 
 Final comparison is **run2-olmo-8192-extension vs. run3-olmo-longmino** (primary), with
-run3-olmo (pre-matched-stage) as a secondary reference point.
+run3-olmo (pre-matched-stage) and run2-olmo (pre-extension baseline) as secondary reference
+points.
 
 ## Prerequisites
 
@@ -199,5 +201,47 @@ pretrain (`mix_file`) code path, which previously only supported plain, unpacked
 
 To convert and push a trained checkpoint to HuggingFace, see [docs/save_to_hf.md](save_to_hf.md).
 
-Evaluation (RULER at 4K/8K, downstream suite) is not yet automated — see the "Evaluation"
-section of the plan document for the intended comparison methodology.
+## Evaluation
+
+Both evals below run on the checkpoints pushed to HF.
+Set `HF_ORG_NAME` to whichever org/user namespace the checkpoints were
+pushed to (see [docs/save_to_hf.md](save_to_hf.md)) before running either.
+
+### RULER (4K/8K)
+
+See [docs/ruler_eval.md](ruler_eval.md) for full setup/installation details. 
+Once all checkpoints are on HF, run:
+
+```bash
+export HF_ORG_NAME=<org-or-user-namespace>
+./batch/submit.sh ruler-eval batch/3b/eval_ruler.sh
+```
+
+This runs the 13 official RULER tasks at 4,096/8,192 for each checkpoint and writes results to
+`results/ruler_eval/<checkpoint-name>/`. 
+
+To compare across checkpoints:
+
+```bash
+uv run --no-sync python scripts/compare_ruler_results.py --csv results/ruler_eval/comparison.csv
+```
+
+`compare_ruler_results.py` computes the macro-average for every seq length and saves to `comparison.csv`.
+
+### Downstream suite (Hellaswag)
+
+Hellaswag eval checks the long-context stage didn't degrade short-context capability.
+Run it with:
+
+```bash
+export HF_ORG_NAME=<org-or-user-namespace>
+./batch/submit.sh ruler-eval batch/3b/eval_hellaswag.sh
+```
+
+Writes results to `results/hellaswag_eval/<checkpoint-name>/`.
+
+Then compare between models with:
+
+```bash
+uv run --no-sync python scripts/compare_hellaswag_results.py --csv results/hellaswag_comparison.csv
+```

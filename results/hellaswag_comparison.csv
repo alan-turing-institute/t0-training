@@ -1,0 +1,5 @@
+checkpoint,acc,acc_norm
+run2-olmo,0.4344,0.5608
+run2-olmo-8192-extension,0.4141,0.5280
+run3-olmo,0.4297,0.5537
+run3-olmo-longmino,0.4089,0.5229

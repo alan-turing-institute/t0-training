@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # ============================================================
-# Convert and push the three long-context extension checkpoints to
-# HuggingFace, as private repos (see docs/long_context_extension_2048_8192.md).
+# Convert and push the long-context extension checkpoints to HuggingFace, as private repos
+# (see docs/long_context_extension_2048_8192.md).
 #
 # Requires:
 # - HF_ORG_NAME set
@@ -23,6 +23,7 @@ EXPORT_DIR="hf_export"
 
 # checkpoint_path:repo_name pairs
 CHECKPOINTS=(
+    "checkpoints/3b/run2-olmo/step241565:olmo3-3b-run2-olmo"
     "checkpoints/3b/run3-olmo/step241533:olmo3-3b-run3-olmo"
     "checkpoints/3b/run2-olmo-8192-extension/step32194:olmo3-3b-run2-olmo-8192-extension"
     "checkpoints/3b/run3-olmo-longmino/step32194:olmo3-3b-run3-olmo-longmino"

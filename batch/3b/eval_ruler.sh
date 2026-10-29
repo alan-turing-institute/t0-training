@@ -7,7 +7,8 @@
 #SBATCH --output=logs/ruler-eval/%x-%j.out
 #SBATCH --error=logs/ruler-eval/%x-%j.err
 
-# RULER long-context eval (4K/8K) across the three long-context extension checkpoints
+# RULER long-context eval (4K/8K) across the long-context extension checkpoints, plus
+# run2-olmo as a no-extension baseline (expected to score badly at 8192).
 
 # Export HF_ORG_NAME and HF_TOKEN before running
 
@@ -25,8 +26,9 @@ export HF_HUB_DISABLE_XET=1
 source .venv-eval/bin/activate
 
 CHECKPOINTS=(
-    "run3-olmo"
+    "run2-olmo"
     "run2-olmo-8192-extension"
+    "run3-olmo"
     "run3-olmo-longmino"
 )
 
