@@ -269,14 +269,14 @@ bash scripts/generate_long_context_followup_mixes.sh
 ```
 
 This generates 6 new mixes (ratio sweep: `dolma3-lc-mix-10B-{50-50,34-66,20-80}.txt`;
-token-budget sweep: `dolma3-lc-mix-{2B,5B,20B}.txt`) and skips any that already exist. 
+token-budget sweep: `dolma3-lc-mix-{2.5B,5B,20B}.txt`) and skips any that already exist. 
 
 ### Step 2: Download data shards for the new mixes
 
 This is the same as Step 2 above, repeated per new mix file generated in Step 1:
 
 ```bash
-uv run --no-sync t0-download --mix-file data/mixes/xxx --data-dir data/npy
+for f in data/mixes/dolma3-lc-*; do uv run --no-sync t0-download --mix-file $f --data-dir data/npy; done
 ```
 
 **Repeat this for each new mix file generated in Step 1!**
