@@ -73,12 +73,12 @@ runs at the flat 10B rate *and* at their real token-scaled cost):
 | 0 (seed repeat) | 1 × 10B | 165 | 165 |
 | 1 (ratio sweep) | 3 × 10B | 165 | 495 |
 | 2 (LR sweep) | 3 × 10B | 165 | 495 |
-| 3 (token sweep) | 2B + 5B + 20B | 33 + 83 + 330 | 446 |
-| **Total** | 10 new runs | | **≈ 1,601** |
+| 3 (token sweep) | 2.5B + 5B + 20B | 41 + 83 + 330 | 454 |
+| **Total** | 10 new runs | | **≈ 1,609** |
 
-That's under a 2,000 GPU-hour budget with ~400 hours of headroom — all four experiments
+That's under a 2,000 GPU-hour budget with ~390 hours of headroom — all four experiments
 (0, 1, 2, 3 in full) fit. If you want more margin, the cheapest trims (in order) are:
-dropping Experiment 3's 5B point (−83, since 2B/20B alone already bound the curve's shape),
+dropping Experiment 3's 5B point (−83, since 2.5B/20B alone already bound the curve's shape),
 then Experiment 1's or 2's weakest-expected point (−165 each) — see each experiment's own
 "prioritize X first" note for which point that is. Experiment 0 (seed repeat) is the one I'd
 protect from cuts regardless, since it's what tells you whether the rest of the results mean
@@ -175,7 +175,7 @@ everything else, that's evidence of undertraining at the low end, bounding how f
 can usefully go. Track hellaswag at each point too — a lower LR may help RULER but also fail
 to move hellaswag off its pretrain-checkpoint value if it's too weak to adapt anything.
 
-### Experiment 3 — token-budget sweep (2B / 5B / 10B / 20B)
+### Experiment 3 — token-budget sweep (2.5B / 5B / 10B / 20B)
 
 **Hypothesis**: rather than assume the 8,192 shortfall is a structural RoPE-generalization
 ceiling (vs. simple undertraining) and pick one side of that bet, measure it directly: run the
@@ -191,13 +191,15 @@ mix was built, see `long_context_extension_plan.md` "Data mix" section for the `
 commands this follows):
 
 ```bash
-# 2B: 1.32B short / 0.68B long
-uv run --no-sync t0-submix --target-tokens 1.32e9 --seed 7 --output data/mixes/dolma3-lc-short-2B.txt
-uv run --no-sync t0-submix --target-tokens 0.68e9 \
+# 2.5B: 1.65B short / 0.85B long (2B was the original plan, but 1.32B short-context tokens is
+# below the pool's minimum of ~1.41B needed to include at least 1 file per label across its
+# 65 labels — bumped to 2.5B, which clears that floor with margin, same 66/34 ratio)
+uv run --no-sync t0-submix --target-tokens 1.65e9 --seed 7 --output data/mixes/dolma3-lc-short-2.5B.txt
+uv run --no-sync t0-submix --target-tokens 0.85e9 \
     --mix-file .venv/lib/python3.*/site-packages/olmo_core/data/mixes/OLMo-longmino-mix-0625.txt \
-    --total-tokens 5.0e10 --output data/mixes/dolma3-lc-long-2B.txt
-sed -i 's#{TOKENIZER}#allenai/dolma3-tokenizer#' data/mixes/dolma3-lc-long-2B.txt
-cat data/mixes/dolma3-lc-short-2B.txt data/mixes/dolma3-lc-long-2B.txt > data/mixes/dolma3-lc-mix-2B.txt
+    --total-tokens 5.0e10 --output data/mixes/dolma3-lc-long-2.5B.txt
+sed -i 's#{TOKENIZER}#allenai/dolma3-tokenizer#' data/mixes/dolma3-lc-long-2.5B.txt
+cat data/mixes/dolma3-lc-short-2.5B.txt data/mixes/dolma3-lc-long-2.5B.txt > data/mixes/dolma3-lc-mix-2.5B.txt
 
 # 5B: 3.3B short / 1.7B long — same pattern, --target-tokens 3.3e9 / 1.7e9, output dolma3-lc-mix-5B.txt
 
@@ -209,7 +211,7 @@ cat data/mixes/dolma3-lc-short-2B.txt data/mixes/dolma3-lc-long-2B.txt > data/mi
 ```bash
 export BASE_RUN=run2-olmo
 export PRETRAIN_STEP=<run2-olmo's final step>
-for tokens in 2B 5B 20B; do
+for tokens in 2.5B 5B 20B; do
     export RUN="run2-olmo-8192-extension-${tokens}"
     export EXTRA_ARGS="mix_file=data/mixes/dolma3-lc-mix-${tokens}.txt"
     ./batch/submit.sh "run2-${tokens}" batch/3b/long_context_extend.sh
@@ -220,12 +222,12 @@ done
 **Caveats**:
 - Each budget is still a single seed — the curve shows a trend, not confidence intervals.
   Don't over-read small wiggles between adjacent points as meaningful without a seed check.
-- `warmup_steps=100` is fixed across all four; at 2B tokens (~7.6K steps at this batch size)
+- `warmup_steps=100` is fixed across all four; at 2.5B tokens (~9.5K steps at this batch size)
   that's still a small fraction of training, so warmup proportion isn't a confound, but worth
-  a sanity glance at the loss curve for the 2B run specifically.
+  a sanity glance at the loss curve for the 2.5B run specifically.
 - This is the most expensive single experiment here (20B tokens ≈ 2× the original run's cost;
   all four points together ≈ 3.7× one run) — run it in parallel with Experiments 1-2 only if
-  budget allows, otherwise prioritize the 2B/20B endpoints first (cheapest signal on whether
+  budget allows, otherwise prioritize the 2.5B/20B endpoints first (cheapest signal on whether
   the curve is flat or still climbing) before filling in 5B.
 
 **Same single-seed caveat applies to Experiments 1 and 2's sweeps above** — each sweep point
@@ -262,7 +264,7 @@ line/panel, and run3-olmo-longmino's macro-average drawn as a flat reference lin
 length.
 
 For Experiment 3 specifically: plot RULER macro-average @ 4,096 and @ 8,192 (y-axis) against
-token budget (x-axis, log scale: 2B/5B/10B/20B), with run3-olmo-longmino's macro-average drawn
+token budget (x-axis, log scale: 2.5B/5B/10B/20B), with run3-olmo-longmino's macro-average drawn
 as a flat reference line at each length — same shape as the existing eval comparison
 artifact, just x = tokens (or long-context fraction, or peak LR) instead of checkpoint name.
 
