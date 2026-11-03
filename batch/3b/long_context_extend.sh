@@ -61,7 +61,7 @@ srun bash -c "uv run --no-sync torchrun \
     --master_addr=$MASTER_ADDR \
     --master_port=$MASTER_PORT \
     -m t0_training configs/olmo3-3B-8192-extension.yaml \
-    --run-name olmo3-3B-8192-extension \
+    --run-name olmo3-3B-8192-extension-${RUN#run2-} \
     load_path=$BASE_CKPT \
     save_folder=checkpoints/3b/$RUN \
     $EXTRA_ARGS"

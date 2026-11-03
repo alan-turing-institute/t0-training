@@ -7,12 +7,9 @@
 #SBATCH --output=logs/ruler-eval/%x-%j.out
 #SBATCH --error=logs/ruler-eval/%x-%j.err
 
-# Hellaswag downstream eval across the long-context extension checkpoints plus run2-olmo's
-# pre-extension checkpoint. Runs directly against the exact pushed checkpoint — see
-# docs/long_context_extension_2048_8192.md.
+# Hellaswag downstream eval
 #
-# Requires HF_ORG_NAME set to the org/user namespace the checkpoints were pushed to
-# (see scripts/export_hf_longcontext.sh), and HF_TOKEN set with read access to those repos.
+# Requires HF_ORG_NAME set to the org/user namespace the checkpoints were pushed to and HF_TOKEN set with read access to those repos.
 
 module load cuda/12.6
 module load gcc-native/12.3
@@ -28,10 +25,25 @@ export HF_HUB_DISABLE_XET=1
 source .venv-eval/bin/activate
 
 CHECKPOINTS=(
-    "run2-olmo"
-    "run2-olmo-8192-extension"
-    "run3-olmo"
-    "run3-olmo-longmino"
+    # Original 4
+     "run2-olmo"
+     "run2-olmo-8192-extension"
+     "run3-olmo"
+     "run3-olmo-longmino"
+
+    # Follow-ups
+    # "run2-seed2"
+    # "run2-ratio-50-50"
+    # "run2-ratio-34-66"
+    # "run2-lr-1.73e-4"
+    # "run2-lr-3.45e-4"
+    # "run2-lr-1.0e-3"
+    # "run2-tokens-2.5B"
+    # "run2-tokens-5B"
+    # "run2-ratio-20-80"
+    # "run2-tokens-20B"
+    # "run2-lr-8.63e-5"
+    # "run2-lr-4.31e-5"
 )
 
 for name in "${CHECKPOINTS[@]}"; do

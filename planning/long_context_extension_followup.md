@@ -72,17 +72,17 @@ runs at the flat 10B rate *and* at their real token-scaled cost):
 |---|---|---|---|
 | 0 (seed repeat) | 1 × 10B | 165 | 165 |
 | 1 (ratio sweep) | 3 × 10B | 165 | 495 |
-| 2 (LR sweep) | 3 × 10B | 165 | 495 |
+| 2 (LR sweep) | 5 × 10B | 165 | 825 |
 | 3 (token sweep) | 2.5B + 5B + 20B | 41 + 83 + 330 | 454 |
-| **Total** | 10 new runs | | **≈ 1,609** |
+| **Total** | 12 new runs | | **≈ 1,939** |
 
-That's under a 2,000 GPU-hour budget with ~390 hours of headroom — all four experiments
-(0, 1, 2, 3 in full) fit. If you want more margin, the cheapest trims (in order) are:
-dropping Experiment 3's 5B point (−83, since 2.5B/20B alone already bound the curve's shape),
-then Experiment 1's or 2's weakest-expected point (−165 each) — see each experiment's own
-"prioritize X first" note for which point that is. Experiment 0 (seed repeat) is the one I'd
-protect from cuts regardless, since it's what tells you whether the rest of the results mean
-anything.
+That's under a 2,000 GPU-hour budget with ~60 hours of headroom — all four experiments
+(0, 1, 2, 3 in full) fit, though with little margin left. If you want more margin, the
+cheapest trims (in order) are: dropping Experiment 3's 5B point (−83, since 2.5B/20B alone
+already bound the curve's shape), then Experiment 1's or 2's weakest-expected point (−165
+each) — see each experiment's own "prioritize X first" note for which point that is.
+Experiment 0 (seed repeat) is the one I'd protect from cuts regardless, since it's what tells
+you whether the rest of the results mean anything.
 
 ### Experiment 1 — long-context data ratio sweep (66/34 / 50/50 / 34/66 / 20/80 short/long)
 
@@ -136,7 +136,7 @@ each ratio point; a ratio that wins on RULER but collapses hellaswag isn't a cle
 A non-monotonic curve (e.g. 50/50 best, 20/80 worse than 34/66) would suggest an optimum
 ratio rather than "more long-context data is strictly better."
 
-### Experiment 2 — peak LR sweep (1.73e-4 / 3.45e-4 / 6.9e-4 / 1.0e-3)
+### Experiment 2 — peak LR sweep (4.31e-5 / 8.63e-5 / 1.73e-4 / 3.45e-4 / 6.9e-4 / 1.0e-3)
 
 **Hypothesis**: per the original plan's "Known gaps," the extension stage re-introduces a
 non-trivial peak LR (6.9e-4) on an already-converged, near-zero-LR checkpoint, then decays
@@ -149,10 +149,13 @@ regression. A sweep is the only way to tell "disruptive restart" from "needs mor
 adapt" apart, rather than guessing a single gentler value.
 
 **Change**: hold everything else fixed (warmup_steps=100, linear decay to 0, same 10B/66-34
-mix) and vary peak LR only, so any effect is attributable to the LR alone:
+mix) and vary peak LR only, so any effect is attributable to the LR alone. A geometric halving
+sequence down from the original 6.9e-4, plus pretrain's own unreduced peak LR as the high end:
 
 | Peak LR | Relation to original 6.9e-4 |
 |---|---|
+| 4.31e-5 | 0.0625× |
+| 8.63e-5 | 0.125× |
 | 1.73e-4 | 0.25× |
 | 3.45e-4 | 0.5× |
 | 6.9e-4 (existing) | 1× — the original run2-olmo-8192-extension, no rerun needed |
@@ -161,7 +164,7 @@ mix) and vary peak LR only, so any effect is attributable to the LR alone:
 ```bash
 export BASE_RUN=run2-olmo
 export PRETRAIN_STEP=<run2-olmo's final step>
-for lr in 1.73e-4 3.45e-4 1.0e-3; do
+for lr in 4.31e-5 8.63e-5 1.73e-4 3.45e-4 1.0e-3; do
     export RUN="run2-olmo-8192-extension-lr-${lr}"
     export EXTRA_ARGS="train_module.optim.lr=${lr}"
     ./batch/submit.sh "run2-lr-${lr}" batch/3b/long_context_extend.sh
@@ -170,10 +173,12 @@ done
 
 **Watch**: expect a U-shape or monotonic trend, not necessarily a flat line — if 1.0e-3
 (no reduction) does *better* than 6.9e-4 at 8,192, that's evidence against the warm-restart
-hypothesis and for "the original reduction was too conservative." If 1.73e-4 does worse than
-everything else, that's evidence of undertraining at the low end, bounding how far "gentler"
-can usefully go. Track hellaswag at each point too — a lower LR may help RULER but also fail
-to move hellaswag off its pretrain-checkpoint value if it's too weak to adapt anything.
+hypothesis and for "the original reduction was too conservative." If the curve is still
+improving at the lowest point (4.31e-5), flag that it hasn't bottomed out rather than picking
+a winner — it'd mean going lower still. If it turns back up somewhere in the range, that's
+the undertraining threshold — note exactly where it flips rather than just "LR matters."
+Track hellaswag at each point too — a lower LR may help RULER but also fail to move hellaswag
+off its pretrain-checkpoint value if it's too weak to adapt anything.
 
 ### Experiment 3 — token-budget sweep (2.5B / 5B / 10B / 20B)
 
@@ -259,9 +264,9 @@ to track the short-context cost, and run3-olmo-longmino's macro-average drawn as
 reference line at each length.
 
 For Experiment 2 specifically: plot RULER macro-average @ 4,096 and @ 8,192 (y-axis) against
-peak LR (x-axis, log scale: 1.73e-4/3.45e-4/6.9e-4/1.0e-3), with hellaswag acc_norm as a second
-line/panel, and run3-olmo-longmino's macro-average drawn as a flat reference line at each
-length.
+peak LR (x-axis, log scale: 4.31e-5/8.63e-5/1.73e-4/3.45e-4/6.9e-4/1.0e-3), with hellaswag
+acc_norm as a second line/panel, and run3-olmo-longmino's macro-average drawn as a flat
+reference line at each length.
 
 For Experiment 3 specifically: plot RULER macro-average @ 4,096 and @ 8,192 (y-axis) against
 token budget (x-axis, log scale: 2.5B/5B/10B/20B), with run3-olmo-longmino's macro-average drawn

@@ -5,7 +5,10 @@ set -euo pipefail
 # Generate the data mix files needed for the long-context extension
 # follow-up sweeps (see planning/long_context_extension_followup.md):
 #   - Experiment 1 (ratio sweep): 50/50, 34/66, 20/80 short/long splits at 10B tokens total
-#   - Experiment 3 (token-budget sweep): 2B, 5B, 20B total tokens at the original 66/34 split
+#   - Experiment 3 (token-budget sweep): 2.5B, 5B, 20B total tokens at the original 66/34 split
+#     (2B was the original plan, but 1.32e9 short-context tokens is below the pool's minimum
+#     of ~1.41e9 needed to include at least 1 file per label across its 65 labels — bumped to
+#     2.5B, which clears that floor with margin, preserving the exact 66/34 ratio)
 # The existing 10B/66-34 mix (data/mixes/dolma3-lc-mix-10B.txt) is reused as-is for both
 # sweeps' shared 4th point and is not regenerated here.
 #
@@ -13,7 +16,7 @@ set -euo pipefail
 # (see planning/long_context_extension_plan.md, "Data mix" section).
 #
 # Usage:
-#   uv run --no-sync bash scripts/generate_long_context_followup_mixes.sh
+#   bash scripts/generate_long_context_followup_mixes.sh
 # ============================================================
 
 LONGMINO_MIX_FILE=$(echo .venv/lib/python3.*/site-packages/olmo_core/data/mixes/OLMo-longmino-mix-0625.txt)
@@ -28,7 +31,7 @@ RATIO_POINTS=(
 
 # label|short_tokens|long_tokens
 TOKEN_BUDGET_POINTS=(
-    "2B|1.32e9|0.68e9"
+    "2.5B|1.65e9|0.85e9"
     "5B|3.3e9|1.7e9"
     "20B|13.2e9|6.8e9"
 )
