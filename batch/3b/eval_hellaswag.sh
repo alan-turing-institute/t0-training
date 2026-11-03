@@ -7,22 +7,19 @@
 #SBATCH --output=logs/ruler-eval/%x-%j.out
 #SBATCH --error=logs/ruler-eval/%x-%j.err
 
-# Hellaswag downstream eval
+# Short-context downstream evals (hellaswag + arc_easy/arc_challenge/piqa/winogrande).
 #
-# Requires HF_ORG_NAME set to the org/user namespace the checkpoints were pushed to and HF_TOKEN set with read access to those repos.
+# Runs directly from local olmo-core checkpoints under checkpoints/3b/<name>/step{N} rather
+# than from the HF Hub — each checkpoint is exported to a local-only hf_export/<name> dir
+# (scripts/export_hf.py, no --push) just-in-time, evaluated, then deleted, so only one export
+# exists on disk at a time.
 
 module load cuda/12.6
 module load gcc-native/12.3
 
-if [ -z "${HF_ORG_NAME:-}" ]; then
-    echo "Error: HF_ORG_NAME is not set. Export it before submitting this job." >&2
-    exit 1
-fi
-
-# hf_xet stalls on Isambard-AI compute nodes — see scripts/export_hf_longcontext.sh
-export HF_HUB_DISABLE_XET=1
-
 source .venv-eval/bin/activate
+
+TASKS="hellaswag,arc_easy,arc_challenge,piqa,winogrande"
 
 CHECKPOINTS=(
     # Original 4
@@ -47,15 +44,28 @@ CHECKPOINTS=(
 )
 
 for name in "${CHECKPOINTS[@]}"; do
-    repo="${HF_ORG_NAME}/olmo3-3b-${name}"
+    ckpt_dir="checkpoints/3b/${name}"
+    step=$(ls "$ckpt_dir" 2>/dev/null | grep "^step" | sort -V | tail -1)
+    if [ -z "$step" ]; then
+        echo "WARNING: no checkpoint found under ${ckpt_dir}, skipping ${name}" >&2
+        continue
+    fi
+    export_dir="hf_export/${name}"
     out="results/hellaswag_eval/${name}"
 
     echo ""
-    echo ">>> ${name}  (${repo})"
+    echo ">>> ${name}  (${ckpt_dir}/${step} -> ${export_dir}, local only)"
     echo "--------------------------------------------"
+    uv run --no-sync python scripts/export_hf.py \
+        --checkpoint "${ckpt_dir}/${step}" \
+        --output "$export_dir" \
+        --save-overwrite
+
     lm_eval --model hf \
-        --model_args pretrained="$repo",tokenizer=allenai/dolma2-tokenizer,dtype=bfloat16 \
-        --tasks hellaswag \
+        --model_args pretrained="$export_dir",tokenizer=allenai/dolma2-tokenizer,dtype=bfloat16 \
+        --tasks "$TASKS" \
         --batch_size auto \
         --output_path "$out"
+
+    rm -rf "$export_dir"
 done
