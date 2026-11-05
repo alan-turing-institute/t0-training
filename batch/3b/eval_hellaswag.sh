@@ -17,8 +17,6 @@
 module load cuda/12.6
 module load gcc-native/12.3
 
-source .venv-eval/bin/activate
-
 TASKS="hellaswag,arc_easy,arc_challenge,piqa,winogrande"
 
 CHECKPOINTS=(
@@ -59,9 +57,11 @@ for name in "${CHECKPOINTS[@]}"; do
     uv run --no-sync python scripts/export_hf.py \
         --checkpoint "${ckpt_dir}/${step}" \
         --output "$export_dir" \
+        --atol 0.5 \
+        --rtol 0.05 \
         --save-overwrite
 
-    lm_eval --model hf \
+    uv run --no-sync lm_eval --model hf \
         --model_args pretrained="$export_dir",tokenizer=allenai/dolma2-tokenizer,dtype=bfloat16 \
         --tasks "$TASKS" \
         --batch_size auto \

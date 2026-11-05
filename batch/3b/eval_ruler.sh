@@ -25,8 +25,6 @@ fi
 # disable hf_xet to stop download stalling
 export HF_HUB_DISABLE_XET=1
 
-source .venv-eval/bin/activate
-
 CHECKPOINTS=(
     # Original 4.
     "run2-olmo"
@@ -56,7 +54,7 @@ out="results/ruler_eval/${name}"
 echo ""
 echo ">>> [task ${SLURM_ARRAY_TASK_ID}] ${name}  (${repo})"
 echo "--------------------------------------------"
-lm_eval --model hf \
+uv run --no-sync lm_eval --model hf \
     --model_args pretrained="$repo",tokenizer=allenai/dolma2-tokenizer,max_length=8192,dtype=bfloat16 \
     --tasks ruler \
     --metadata='{"max_seq_lengths":[4096,8192]}' \
