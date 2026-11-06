@@ -58,7 +58,7 @@ srun bash -c "uv run --no-sync torchrun \
     --node_rank=\$SLURM_PROCID \
     --master_addr=$MASTER_ADDR \
     --master_port=$MASTER_PORT \
-    -m t0_training configs/olmo3-3B-longmino-extension.yaml \
+    -m t0_training.olmo configs/olmo3-3B-longmino-extension.yaml \
     --run-name olmo3-3B-longmino-extension \
     load_path=$BASE_CKPT \
     save_folder=checkpoints/3b/$RUN"

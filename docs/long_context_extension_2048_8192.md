@@ -32,7 +32,7 @@ plan for why this is left as-is).
 ### Step 1: Verify the config
 
 ```bash
-uv run --no-sync t0-train configs/olmo3-3B-8192.yaml --run-name test-3B-8192 --dry-run
+uv run --no-sync python -m t0_training.olmo configs/olmo3-3B-8192.yaml --run-name test-3B-8192 --dry-run
 ```
 
 ### Step 2: Pretrain
@@ -99,7 +99,7 @@ This is a large download (10B tokens, including the long-document longmino porti
 ### Step 3: Verify the config
 
 ```bash
-uv run --no-sync t0-train configs/olmo3-3B-8192-extension.yaml --run-name test-3B-8192-extension \
+uv run --no-sync python -m t0_training.olmo configs/olmo3-3B-8192-extension.yaml --run-name test-3B-8192-extension \
     --dry-run load_path=checkpoints/3b/run2-olmo/step<final_step>
 ```
 
@@ -140,7 +140,7 @@ need to regenerate them if you've already completed Step 1/2 above.
 ### Step 1: Verify the config
 
 ```bash
-uv run --no-sync t0-train configs/olmo3-3B-longmino-extension.yaml --run-name test-3B-longmino \
+uv run --no-sync python -m t0_training.olmo configs/olmo3-3B-longmino-extension.yaml --run-name test-3B-longmino \
     --dry-run load_path=checkpoints/3b/run3-olmo/step<final_step>
 ```
 
@@ -165,10 +165,10 @@ Checkpoints are saved to `checkpoints/3b/run3-olmo-longmino/step{N}/`.
 
 ```bash
 # Dry-run configs (no GPU needed)
-uv run --no-sync t0-train configs/olmo3-3B-8192.yaml --run-name test-3B-8192 --dry-run
-uv run --no-sync t0-train configs/olmo3-3B-8192-extension.yaml --run-name test-ext --dry-run \
+uv run --no-sync python -m t0_training.olmo configs/olmo3-3B-8192.yaml --run-name test-3B-8192 --dry-run
+uv run --no-sync python -m t0_training.olmo configs/olmo3-3B-8192-extension.yaml --run-name test-ext --dry-run \
     load_path=/tmp/fake_ckpt mix_file=<any existing mix file>
-uv run --no-sync t0-train configs/olmo3-3B-longmino-extension.yaml --run-name test-longmino --dry-run \
+uv run --no-sync python -m t0_training.olmo configs/olmo3-3B-longmino-extension.yaml --run-name test-longmino --dry-run \
     load_path=/tmp/fake_ckpt mix_file=<any existing mix file>
 
 # Run the config unit tests (covers use_packing / rope_scaling YAML options)
