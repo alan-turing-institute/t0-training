@@ -1,5 +1,8 @@
 # Replication Guide: Long-Context Extension (2,048 → 8,192)
 
+**2026-11-10 Warning! - Known issue (found after revieiwng results, not yet fixed)**: 
+For this work we assumed `OLMo-longmino-mix-0625.txt` was pure long-context data but in fact it is OLMo3's already-blended 33.9% long / 66.1% midtrain mix. Therefore when combined with the 66% short-context portion above, real long-document exposure in the resulting 10B-token mix is only ~11.5% (not ~34% as previously thought). See the correction note in [`long_context_extension_plan.md`](../planning/long_context_extension_plan.md) for the more info and fixes needed.
+
 This guide covers the three runs that make up the 2,048 to 8,192 long-context extension
 experiment. See [`planning/long_context_extension_plan.md`](../planning/long_context_extension_plan.md)
 for the full rationale, confound analysis, and open questions.

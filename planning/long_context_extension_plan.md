@@ -174,6 +174,46 @@ Caveat: OLMo3's 10B ablation figure comes from 7B/32B-scale experiments; whether
 needs relatively more, less, or about the same long-context exposure to saturate is
 untested — flag as a residual scale-transfer uncertainty rather than a resolved question.
 
+### 2026-11-10 Correction (found after reviewing results, after both arms were already trained, no rerun is planned yet and no fix implemented): the data mix is more diluted than intended
+
+**`OLMo-longmino-mix-0625.txt` is not pure long-context data.** It's OLMo3's own *finished,
+already-blended* stage-3 training mix: per the `allenai/dolma3_longmino_mix-50B-1025` HF card
+(the same artifact, later-dated version), it is internally **33.9% long-context PDF tokens /
+66.1% midtraining-style tokens**. The genuinely-long-only source is a *different*,
+separate HF dataset — `allenai/dolma3_longmino_pool` (639B tokens, raw `.jsonl.zst`, no
+tokenization, 100% long documents) — which this doc's own "Resolved" note above already
+references (for the length-bucket question) without noticing it names a different dataset
+from the one actually downloaded a few paragraphs up.
+
+Because this doc treats the already-blended `OLMo-longmino-mix-0625.txt` as if it were the
+"34% long-context portion" and combines it with *another* separately-sampled 66% short-context
+slice, the real composition of the 10B-token stage is:
+
+| Source | Tokens | Share of 10B |
+|---|---|---|
+| Our own short-context sample | 6.6B | 66% |
+| Genuine long-context PDFs (33.9% of the 3.4B longmino draw) | ~1.15B | ~11.5% |
+| Midtrain-style tokens embedded inside the longmino draw (66.1% of 3.4B) | ~2.25B | ~22.5% |
+
+So **real long-document exposure for both `run2-olmo-8192-extension` and
+`run3-olmo-longmino` is ~11.5% of the stage, not the intended 34%** — the file's own internal
+66% short-context slice gets counted twice. This affects both arms equally (same mix file,
+same bug), so the primary run2-vs-run3 RULER comparison itself is not invalidated as a
+*relative* comparison — but any claim that either arm received OLMo3-level (34%) long-document
+exposure is wrong, and this is a plausible *contributing* (not necessarily sole) explanation
+for both arms landing below hopes at 8,192.
+
+**Not fixing this retroactively** (no rerun planned) — but flagging for interpretation:
+anywhere this doc's results are cited, the long-context exposure should be described as "~11.5%
+of the post-training stage was genuine long documents," not "34%." See
+[`long_context_extension_followup.md`](./long_context_extension_followup.md) for the
+additional implication this has for Experiment 1's ratio sweep.
+
+Fixing this properly would require a new tokenization step (`dolma3_longmino_pool` is raw text,
+not pre-tokenized `.npy` shards like everything else this pipeline consumes, and isn't hosted
+pre-tokenized at `olmo-data.org` the way `OLMo-longmino-mix-0625.txt` is) — out of scope unless
+this experiment is revisited.
+
 ### Batch size
 
 Keep batch tokens at 262,144 (unchanged) -> 32 instances/step at 8,192 (down from 128 at

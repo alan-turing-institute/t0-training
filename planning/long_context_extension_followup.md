@@ -136,6 +136,28 @@ each ratio point; a ratio that wins on RULER but collapses hellaswag isn't a cle
 A non-monotonic curve (e.g. 50/50 best, 20/80 worse than 34/66) would suggest an optimum
 ratio rather than "more long-context data is strictly better."
 
+**2026-11-10 Correction (found after reviewing results, no rerun planned)**: `OLMo-longmino-mix-0625.txt` is not pure
+long-context data — it's OLMo3's own already-blended 33.9% long / 66.1% midtrain mix (see the
+correction note in `long_context_extension_plan.md`'s "Data mix" section). Every ratio point
+above samples from that pre-blended file as if it were pure long-context, so the real
+long-document fraction of each point is ~3× smaller than its label, and the labels compress
+into a much narrower real range than intended:
+
+| Nominal ratio (short/long) | Nominal long tokens | Genuine long tokens (×0.339) | **Real long fraction of 10B** |
+|---|---|---|---|
+| 66/34 (original) | 3.4B | ~1.15B | ~11.5% |
+| 50/50 | 5.0B | ~1.70B | ~17.0% |
+| 34/66 | 6.6B | ~2.24B | ~22.4% |
+| 20/80 | 8.0B | ~2.71B | ~27.1% |
+
+If this sweep was already run, re-read any "no effect" or "weak effect" result against the
+right-hand column, not the nominal ratio — the sweep's actual x-axis only ever spanned
+~11.5%–27.1% genuine long-document fraction, not 34%–80%, which would mute/flatten a real
+ratio effect on its own. A correct version of this sweep needs a pure-long-document source
+(`allenai/dolma3_longmino_pool`) rather than `OLMo-longmino-mix-0625.txt`; that dataset is raw
+`.jsonl.zst` text, not pre-tokenized, so using it requires a new tokenization step this repo's
+pipeline doesn't currently have.
+
 ### Experiment 2 — peak LR sweep (4.31e-5 / 8.63e-5 / 1.73e-4 / 3.45e-4 / 6.9e-4 / 1.0e-3)
 
 **Hypothesis**: per the original plan's "Known gaps," the extension stage re-introduces a
