@@ -1,8 +1,5 @@
 # Replication Guide: Long-Context Extension (2,048 → 8,192)
 
-**2026-11-10 Warning! - Known issue (found after revieiwng results, not yet fixed)**: 
-For this work we assumed `OLMo-longmino-mix-0625.txt` was pure long-context data but in fact it is OLMo3's already-blended 33.9% long / 66.1% midtrain mix. Therefore when combined with the 66% short-context portion above, real long-document exposure in the resulting 10B-token mix is only ~11.5% (not ~34% as previously thought). See the correction note in [`long_context_extension_plan.md`](../planning/long_context_extension_plan.md) for the more info and fixes needed.
-
 This guide covers the three runs that make up the 2,048 to 8,192 long-context extension
 experiment. See [`planning/long_context_extension_plan.md`](../planning/long_context_extension_plan.md)
 for the full rationale, confound analysis, and open questions.
@@ -62,33 +59,31 @@ to the existing 3B run (~1,000 GPU-hours) — same token count, same model size.
 ### Step 1: Generate the data mixes
 
 66% short-context (fresh sample from our own pretraining pool, different seed from the
-original pretrain run) / 34% long-context (`OLMo-longmino-mix-0625`, the actual mix OLMo3
-used for its own long-context extension), totaling 10B tokens — see the plan document for why
-this size and split were chosen.
+original pretrain run) / 34% long-context (a tokenized sample of `allenai/dolma3_longmino_pool`,
+the genuine 100%-long-document pool OLMo3 draws its long-context mixes from), totaling 10B
+tokens — see the plan document for why this size and split were chosen. **Not yet run** —
+commands below produce the data mix, not yet executed:
 
 ```bash
+# Long-context: tokenize a sample of the pure long-document pool (one-time step; the resulting
+# data/npy/longmino-pool-tokenized/ can be reused for any ratio/token-budget variant up to the
+# --target-tokens size — see long_context_extension_followup.md's Experiment 1 for an example
+# reusing it across two different ratio points)
+uv run --no-sync python scripts/tokenize_longmino_pool.py \
+    --target-tokens 3.5e9 --output-dir data/npy/longmino-pool-tokenized
+
 # Short-context: fresh sample from the pretraining pool (seed=7, different from pretrain's default seed=42)
 uv run --no-sync t0-submix --target-tokens 6.6e9 --seed 7 \
     --output data/mixes/dolma3-lc-short-6.6B.txt
 
-# Long-context: sample from the actual OLMo3 7B longmino mix (50B token pool)
-uv run --no-sync t0-submix --target-tokens 3.4e9 \
-    --mix-file .venv/lib/python3.*/site-packages/olmo_core/data/mixes/OLMo-longmino-mix-0625.txt \
-    --total-tokens 5.0e10 \
-    --output data/mixes/dolma3-lc-long-3.4B.txt
-
-# Longmino data lives under allenai/dolma3-tokenizer upstream, not dolma2-tokenizer. We need
-# to update this so we don't 404 when we try to download it.
-sed -i 's#{TOKENIZER}#allenai/dolma3-tokenizer#' data/mixes/dolma3-lc-long-3.4B.txt
-
-# Combine into a single mix file (mix files are plain `label,path` lines, so concatenation
-# is sufficient — no special multi-mix support is needed in the training config).
-cat data/mixes/dolma3-lc-short-6.6B.txt data/mixes/dolma3-lc-long-3.4B.txt \
+# Take the first 14 of the tokenized pool's 250M-token chunks (~3.5B tokens) and combine with
+# the short-context sample into the final 10B-token mix. Mix files are plain `label,path`
+# lines, so concatenation is sufficient — no special multi-mix support is needed in the
+# training config.
+head -14 data/npy/longmino-pool-tokenized/mix_fragment.txt > /tmp/long-3.4B.txt
+cat data/mixes/dolma3-lc-short-6.6B.txt /tmp/long-3.4B.txt \
     > data/mixes/dolma3-lc-mix-10B.txt
 ```
-
-Every entry in `OLMo-longmino-mix-0625.txt` shares a single label, so `t0-submix` samples
-uniformly at random across the whole pool regardless of file order.
 
 ### Step 2: Download data shards
 

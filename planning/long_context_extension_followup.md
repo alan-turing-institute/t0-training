@@ -102,22 +102,17 @@ on the mix ratio instead:
 | 34/66 | 3.4B | 6.6B |
 | 20/80 | 2.0B | 8.0B |
 
-```bash
-# repeat for each (short_tokens, long_tokens, label) triple below, e.g. 50-50:
-uv run --no-sync t0-submix --target-tokens 5.0e9 --seed 7 \
-    --output data/mixes/dolma3-lc-short-50-50.txt
-uv run --no-sync t0-submix --target-tokens 5.0e9 \
-    --mix-file .venv/lib/python3.*/site-packages/olmo_core/data/mixes/OLMo-longmino-mix-0625.txt \
-    --total-tokens 5.0e10 \
-    --output data/mixes/dolma3-lc-long-50-50.txt
-sed -i 's#{TOKENIZER}#allenai/dolma3-tokenizer#' data/mixes/dolma3-lc-long-50-50.txt
-cat data/mixes/dolma3-lc-short-50-50.txt data/mixes/dolma3-lc-long-50-50.txt \
-    > data/mixes/dolma3-lc-mix-10B-50-50.txt
+Generate the mix files for this sweep via:
 
-# 34-66: --target-tokens 3.4e9 (short) / 6.6e9 (long), output dolma3-lc-mix-10B-34-66.txt
-# 20-80: --target-tokens 2.0e9 (short) / 8.0e9 (long), output dolma3-lc-mix-10B-20-80.txt
-# 66-34: already exists (data/mixes/dolma3-lc-mix-10B.txt) — the original run2-olmo-8192-extension, no rerun needed
+```bash
+bash scripts/generate_long_context_followup_mixes.sh
 ```
+
+This produces `data/mixes/dolma3-lc-mix-10B-{50-50,34-66,20-80}.txt`, with the long-context
+portion sampled from a tokenized sample of `allenai/dolma3_longmino_pool` (see
+`scripts/tokenize_longmino_pool.py`). The 66-34 point already exists
+(`data/mixes/dolma3-lc-mix-10B.txt`, the original run2-olmo-8192-extension) and is not
+regenerated.
 
 ```bash
 export BASE_RUN=run2-olmo
@@ -135,28 +130,6 @@ capability (2.5 pts vs 0.8 for 66/34) at their scale, so track hellaswag alongsi
 each ratio point; a ratio that wins on RULER but collapses hellaswag isn't a clean win.
 A non-monotonic curve (e.g. 50/50 best, 20/80 worse than 34/66) would suggest an optimum
 ratio rather than "more long-context data is strictly better."
-
-**2026-11-10 Correction (found after reviewing results, no rerun planned)**: `OLMo-longmino-mix-0625.txt` is not pure
-long-context data — it's OLMo3's own already-blended 33.9% long / 66.1% midtrain mix (see the
-correction note in `long_context_extension_plan.md`'s "Data mix" section). Every ratio point
-above samples from that pre-blended file as if it were pure long-context, so the real
-long-document fraction of each point is ~3× smaller than its label, and the labels compress
-into a much narrower real range than intended:
-
-| Nominal ratio (short/long) | Nominal long tokens | Genuine long tokens (×0.339) | **Real long fraction of 10B** |
-|---|---|---|---|
-| 66/34 (original) | 3.4B | ~1.15B | ~11.5% |
-| 50/50 | 5.0B | ~1.70B | ~17.0% |
-| 34/66 | 6.6B | ~2.24B | ~22.4% |
-| 20/80 | 8.0B | ~2.71B | ~27.1% |
-
-If this sweep was already run, re-read any "no effect" or "weak effect" result against the
-right-hand column, not the nominal ratio — the sweep's actual x-axis only ever spanned
-~11.5%–27.1% genuine long-document fraction, not 34%–80%, which would mute/flatten a real
-ratio effect on its own. A correct version of this sweep needs a pure-long-document source
-(`allenai/dolma3_longmino_pool`) rather than `OLMo-longmino-mix-0625.txt`; that dataset is raw
-`.jsonl.zst` text, not pre-tokenized, so using it requires a new tokenization step this repo's
-pipeline doesn't currently have.
 
 ### Experiment 2 — peak LR sweep (4.31e-5 / 8.63e-5 / 1.73e-4 / 3.45e-4 / 6.9e-4 / 1.0e-3)
 
@@ -213,27 +186,19 @@ curve that flattens well below run3-olmo-longmino's level favors "structural cei
 change needed" (Experiments 1-2 above).
 
 **Change**: four runs, each a freshly-sized 66/34 mix at the target token count (keep the
-existing 10B mix as-is for that point; generate the other three the same way as the original
-mix was built, see `long_context_extension_plan.md` "Data mix" section for the `t0-submix`
-commands this follows):
+existing 10B mix as-is for that point). Generate the other three via:
 
 ```bash
-# 2.5B: 1.65B short / 0.85B long (2B was the original plan, but 1.32B short-context tokens is
-# below the pool's minimum of ~1.41B needed to include at least 1 file per label across its
-# 65 labels — bumped to 2.5B, which clears that floor with margin, same 66/34 ratio)
-uv run --no-sync t0-submix --target-tokens 1.65e9 --seed 7 --output data/mixes/dolma3-lc-short-2.5B.txt
-uv run --no-sync t0-submix --target-tokens 0.85e9 \
-    --mix-file .venv/lib/python3.*/site-packages/olmo_core/data/mixes/OLMo-longmino-mix-0625.txt \
-    --total-tokens 5.0e10 --output data/mixes/dolma3-lc-long-2.5B.txt
-sed -i 's#{TOKENIZER}#allenai/dolma3-tokenizer#' data/mixes/dolma3-lc-long-2.5B.txt
-cat data/mixes/dolma3-lc-short-2.5B.txt data/mixes/dolma3-lc-long-2.5B.txt > data/mixes/dolma3-lc-mix-2.5B.txt
-
-# 5B: 3.3B short / 1.7B long — same pattern, --target-tokens 3.3e9 / 1.7e9, output dolma3-lc-mix-5B.txt
-
-# 20B: 13.2B short / 6.8B long — same pattern, --target-tokens 13.2e9 / 6.8e9, output dolma3-lc-mix-20B.txt
-
-# 10B: already exists (data/mixes/dolma3-lc-mix-10B.txt) — reuse as-is, this is the original run2-olmo-8192-extension
+bash scripts/generate_long_context_followup_mixes.sh
 ```
+
+This produces `data/mixes/dolma3-lc-mix-{2.5B,5B,20B}.txt` (2.5B: 1.65B short / 0.85B long;
+5B: 3.3B short / 1.7B long; 20B: 13.2B short / 6.8B long — 2B was the original plan for the
+smallest point, but 1.32B short-context tokens is below the pool's minimum of ~1.41B needed to
+include at least 1 file per label across its 65 labels, so it's bumped to 2.5B, which clears
+that floor with margin while keeping the 66/34 ratio). The 10B point already exists
+(`data/mixes/dolma3-lc-mix-10B.txt`, the original run2-olmo-8192-extension) and is not
+regenerated.
 
 ```bash
 export BASE_RUN=run2-olmo
