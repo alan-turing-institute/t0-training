@@ -14,6 +14,9 @@
 
 RUN=${RUN:-run1}
 
+# Reduces allocator fragmentation to help avoid OOM on the 7B model (#29).
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+
 module load cuda/12.6
 module load gcc-native/12.3
 module load brics/nccl/2.26.6-1

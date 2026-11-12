@@ -21,7 +21,7 @@ RUN_CONFIG = RunConfig(
     training=TrainingConfig(
         # max_steps left unset as scripts/train.py computes one epoch of the dataset at runtime.
         global_batch_size=262_144,
-        rank_microbatch_tokens=8_192,  # halved vs 3B, as in olmo3-7B.yaml
+        rank_microbatch_tokens=4_096,  # halved again vs olmo3-7B.yaml's 8192 to fix OOM (#29)
         seq_len=2048,  # sequence_length in olmo3-7B.yaml; model max_seq_len stays 4096
         warmup_steps=100,
         max_lr=1e-3,

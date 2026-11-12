@@ -5,7 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "ai2-olmo-core",
+    "ai2-olmo-core<3.0.0",
     "ai2-olmo-eval",
     "regex",
     "python-dotenv>=1.2.2",
@@ -81,7 +81,6 @@ conflicts = [
 ]
 
 [tool.uv.sources]
-ai2-olmo-core = { git = "https://github.com/allenai/OLMo-core.git" }
 torch = [
     { index = "pytorch-cpu", extra = "cpu" },
     { index = "pytorch-cu126", extra = "nvidia-cu126" },
