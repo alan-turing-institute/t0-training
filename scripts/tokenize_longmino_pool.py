@@ -18,7 +18,10 @@ Usage:
       --target-tokens 7e9 --output-dir data/npy/longmino-pool-tokenized
 """
 import argparse
+import io
+import json
 import logging
+import random
 from pathlib import Path
 
 import numpy as np
@@ -26,10 +29,10 @@ import numpy as np
 log = logging.getLogger(__name__)
 
 DEFAULT_DATASET = "allenai/dolma3_longmino_pool"
-# Matches the identifier the upstream longmino shards are hosted under (see the `sed`
-# substitution in docs/5_long_context_extension_2048_8192.md) — same underlying vocab as
-# TokenizerConfig.dolma2() (vocab_size=100278), just published under this HF repo name.
-DEFAULT_TOKENIZER = "allenai/dolma3-tokenizer"
+# "allenai/dolma3-tokenizer" (the identifier the old, superseded docs' `sed` substitution used)
+# doesn't exist on HF (404, confirmed 2026-11-10) -- every other tokenizer use in this repo is
+# "allenai/dolma2-tokenizer" (== TokenizerConfig.dolma2(), vocab_size=100278), so use that here too.
+DEFAULT_TOKENIZER = "allenai/dolma2-tokenizer"
 CHUNK_TOKENS_DEFAULT = 250_000_000  # ~1 GB per chunk at uint32, matches convert_sft_data.py
 
 
@@ -41,6 +44,32 @@ def _write_chunk(out_dir: Path, chunk_idx: int, ids: list) -> int:
     return len(arr)
 
 
+def _iter_pool_examples(dataset: str, seed: int):
+    """Yield parsed JSON dicts from every `.jsonl.zst` shard in `dataset`, shard order
+    shuffled by `seed` (not a per-document shuffle -- shards stream out in file order)."""
+    from huggingface_hub import hf_hub_download, list_repo_files
+    import zstandard
+
+    files = sorted(f for f in list_repo_files(dataset, repo_type="dataset") if f.endswith(".jsonl.zst"))
+    if not files:
+        raise ValueError(f"No .jsonl.zst shards found under {dataset}")
+    random.Random(seed).shuffle(files)
+    log.info("Found %d shards in %s (shuffled, seed=%d)", len(files), dataset, seed)
+
+    dctx = zstandard.ZstdDecompressor()
+    for filename in files:
+        local_path = hf_hub_download(repo_id=dataset, filename=filename, repo_type="dataset")
+        with open(local_path, "rb") as fh, dctx.stream_reader(fh) as reader:
+            for line in io.TextIOWrapper(reader, encoding="utf-8"):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    yield json.loads(line)
+                except json.JSONDecodeError:
+                    log.warning("Skipping malformed JSON line in %s", filename)
+
+
 def tokenize_pool(
     dataset: str,
     tokenizer_id: str,
@@ -50,7 +79,6 @@ def tokenize_pool(
     seed: int,
     text_field: str,
 ) -> None:
-    from datasets import load_dataset
     from transformers import AutoTokenizer
     from tqdm import tqdm
 
@@ -62,8 +90,7 @@ def tokenize_pool(
         raise ValueError(f"{tokenizer_id} has no eos_token_id — can't separate documents")
 
     log.info("Streaming %s (shuffled, seed=%d)...", dataset, seed)
-    ds = load_dataset(dataset, split="train", streaming=True)
-    ds = ds.shuffle(seed=seed, buffer_size=10_000)
+    ds = _iter_pool_examples(dataset, seed)
 
     all_ids: list = []
     chunk_idx = 0
@@ -113,8 +140,15 @@ def tokenize_pool(
     # Emit a ready-to-use mix-file fragment: one line per part file, shared label.
     # Append this (or a prefix of it, for a smaller token budget) into your combined mix file
     # alongside a t0-submix-generated short-context sample — see the plan for exact commands.
+    # Paths must be relative to t0-download's --data-dir (conventionally "data/npy"), not the
+    # full --output-dir -- otherwise t0-download joins data_dir + this path again, looks for it
+    # at a doubled, nonexistent path, and tries to fetch it from olmo-data.org instead.
     mix_fragment_path = output_dir / "mix_fragment.txt"
-    rel_prefix = output_dir.as_posix()
+    try:
+        rel_prefix = output_dir.resolve().relative_to(Path("data/npy").resolve()).as_posix()
+    except ValueError:
+        log.warning("%s is not under data/npy -- writing %s as the mix-file prefix instead", output_dir, output_dir.name)
+        rel_prefix = output_dir.name
     with open(mix_fragment_path, "w") as f:
         for i in range(chunk_idx):
             f.write(f"longmino-pool,{rel_prefix}/token_ids_part_{i:04d}.npy\n")

@@ -134,28 +134,15 @@ long-document pool OLMo3 itself draws its long-context mixes from (639B tokens, 
 `scripts/tokenize_longmino_pool.py` (no tokenization tooling existed in this pipeline before —
 it previously only ever consumed pre-tokenized `.npy` shards).
 
-**Not yet run** — commands below produce the data mix, not yet executed:
+**Not yet run** — command below produces the data mix, not yet executed:
 
 ```bash
-# Step 1: tokenize a sample of the pure long-document pool (one-time; reuse across any
-# ratio/token-budget variant up to this size)
-uv run --no-sync python scripts/tokenize_longmino_pool.py \
-    --target-tokens 3.5e9 --output-dir data/npy/longmino-pool-tokenized
-
-# Step 2: short-context sample, fresh sample from the pretraining pool, different seed from
-# the original pretrain run to avoid pure repetition (t0-submix defaults to seed=42; use a
-# different one)
-uv run --no-sync t0-submix --target-tokens 6.6e9 --seed 7 \
-    --output data/mixes/dolma3-lc-short-6.6B.txt
-
-# Step 3: take the first 14 of the tokenized pool's 250M-token chunks (~3.5B tokens) and
-# combine with the short-context sample into the final 10B-token mix. Mix files are plain
-# `label,path` lines, so concatenation is sufficient — no special multi-mix support is needed
-# in the training config.
-head -14 data/npy/longmino-pool-tokenized/mix_fragment.txt > /tmp/long-3.4B.txt
-cat data/mixes/dolma3-lc-short-6.6B.txt /tmp/long-3.4B.txt \
-    > data/mixes/dolma3-lc-mix-10B.txt
+bash scripts/generate_long_context_initial_mix.sh
 ```
+
+This tokenizes a sample of the pure long-document pool, samples the short-context portion
+(seed=7, different from pretrain's default seed=42), and combines both into
+`data/mixes/dolma3-lc-mix-10B.txt`.
 
 Total: 10B tokens for this stage (6.6B short / 3.4B long, ~16.7% of the 60B pretrain) —
 matches OLMo3's own long-context-specific ablation dataset size (§3.6.3/3.6.4: their

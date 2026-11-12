@@ -10,7 +10,8 @@ set -euo pipefail
 #     of ~1.41e9 needed to include at least 1 file per label across its 65 labels — bumped to
 #     2.5B, which clears that floor with margin, preserving the exact 66/34 ratio)
 # The existing 10B/66-34 mix (data/mixes/dolma3-lc-mix-10B.txt) is reused as-is for both
-# sweeps' shared 4th point and is not regenerated here.
+# sweeps' shared 4th point and is not regenerated here
+# -- run scripts/generate_long_context_initial_mix.sh first.
 #
 # Long-context portion is sampled from allenai/dolma3_longmino_pool (the genuine, 100%
 # long-document pool), tokenized once via scripts/tokenize_longmino_pool.py and sliced by
