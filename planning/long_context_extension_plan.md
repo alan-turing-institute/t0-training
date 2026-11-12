@@ -134,7 +134,7 @@ long-document pool OLMo3 itself draws its long-context mixes from (639B tokens, 
 `scripts/tokenize_longmino_pool.py` (no tokenization tooling existed in this pipeline before —
 it previously only ever consumed pre-tokenized `.npy` shards).
 
-**Not yet run** — command below produces the data mix, not yet executed:
+Command below produces the data mix:
 
 ```bash
 bash scripts/generate_long_context_initial_mix.sh

@@ -118,11 +118,12 @@ regenerated.
 export BASE_RUN=run2-olmo
 export PRETRAIN_STEP=<run2-olmo's final step>
 for ratio in 50-50 34-66 20-80; do
-    export RUN="run2-olmo-8192-extension-${ratio}"
     export EXTRA_ARGS="mix_file=data/mixes/dolma3-lc-mix-10B-${ratio}.txt"
-    ./batch/submit.sh "run2-${ratio}" batch/3b/long_context_extend.sh
+    ./batch/submit.sh "run2-ratio-${ratio}" batch/3b/long_context_extend.sh
 done
 ```
+
+Checkpoints land at `checkpoints/3b/run2-ratio-{50-50,34-66,20-80}`.
 
 **Watch**: hellaswag/downstream metrics shouldn't regress too sharply as the long-context
 fraction grows — OLMo3 §3.6.3 reports a heavier long-context mix costs more short-context

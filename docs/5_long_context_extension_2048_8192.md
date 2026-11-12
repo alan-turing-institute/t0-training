@@ -61,8 +61,7 @@ to the existing 3B run (~1,000 GPU-hours) — same token count, same model size.
 66% short-context (fresh sample from our own pretraining pool, different seed from the
 original pretrain run) / 34% long-context (a tokenized sample of `allenai/dolma3_longmino_pool`,
 the genuine 100%-long-document pool OLMo3 draws its long-context mixes from), totaling 10B
-tokens — see the plan document for why this size and split were chosen. **Not yet run** —
-commands below produce the data mix, not yet executed:
+tokens — see the plan document for why this size and split were chosen:
 
 ```bash
 bash scripts/generate_long_context_initial_mix.sh
