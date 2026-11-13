@@ -50,7 +50,7 @@ MASTER_PORT=$(( 29500 + SLURM_ARRAY_TASK_ID ))
 
 echo ">>> Fine-tuning ${base_label} on ${ds_name} -> ${save_folder}"
 uv run --no-sync torchrun --nproc-per-node=1 --master-port=${MASTER_PORT} \
-    -m t0_training "$SFT_CONFIG" \
+    -m t0_training.olmo "$SFT_CONFIG" \
     --run-name "$run_name" \
     load_path="$base_ckpt" \
     sft_data_dir="$sft_data_dir" \

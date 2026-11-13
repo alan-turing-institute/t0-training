@@ -3,6 +3,8 @@
 import numpy as np
 import pytest
 
+from olmo_core.data import NumpyFSLDatasetConfig, NumpyPackedFSLDatasetConfig
+from olmo_core.nn.rope import YaRNRoPEScalingConfig
 from olmo_core.optim import SkipStepAdamWConfig
 from olmo_core.train import Duration
 
@@ -158,3 +160,60 @@ class TestOlmo3OptimizerDefaults:
 
         config = build_experiment_config(config_path=str(yaml_path), run_name="test")
         assert config.train_module.z_loss_multiplier == 2.0e-4
+
+
+class TestLongContextExtensionOptions:
+    """Tests for the use_packing and rope_scaling options added for the
+    2,048->8,192 long-context extension recipe."""
+
+    def test_default_dataset_is_unpacked(self, tmp_path):
+        """Without use_packing, the pretrain path must still use plain NumpyFSLDatasetConfig."""
+        yaml_path = _write_minimal_config(tmp_path)
+        config = build_experiment_config(config_path=str(yaml_path), run_name="test")
+        assert isinstance(config.dataset, NumpyFSLDatasetConfig)
+        assert not isinstance(config.dataset, NumpyPackedFSLDatasetConfig)
+
+    def test_use_packing_enables_packed_dataset(self, tmp_path):
+        """use_packing: true must switch the pretrain path to NumpyPackedFSLDatasetConfig."""
+        yaml_path = _write_minimal_config(tmp_path)
+        content = yaml_path.read_text() + "\nuse_packing: true\n"
+        yaml_path.write_text(content)
+
+        config = build_experiment_config(config_path=str(yaml_path), run_name="test")
+        assert isinstance(config.dataset, NumpyPackedFSLDatasetConfig)
+
+    def test_no_rope_scaling_by_default(self, tmp_path):
+        """Without a rope_scaling section, no scaling overrides should be applied."""
+        yaml_path = _write_minimal_config(tmp_path)
+        config = build_experiment_config(config_path=str(yaml_path), run_name="test")
+        assert config.model.block_overrides is None
+
+    def test_rope_scaling_yarn_applied(self, tmp_path):
+        """rope_scaling: {type: yarn, ...} in YAML must apply YaRN scaling to full-attn layers."""
+        yaml_path = _write_minimal_config(tmp_path)
+        content = yaml_path.read_text() + (
+            "\nrope_scaling:\n"
+            "  type: yarn\n"
+            "  factor: 4.0\n"
+            "  old_context_len: 2048\n"
+        )
+        yaml_path.write_text(content)
+
+        config = build_experiment_config(config_path=str(yaml_path), run_name="test")
+        # olmo3_190M uses a sliding-window pattern, so scaling is applied via
+        # block_overrides on the full-attention layers only, not on the shared
+        # base block (which is used for the sliding-window layers).
+        assert config.model.block_overrides
+        scaling = next(iter(config.model.block_overrides.values())).sequence_mixer.rope.scaling
+        assert isinstance(scaling, YaRNRoPEScalingConfig)
+        assert scaling.factor == 4.0
+        assert scaling.old_context_len == 2048
+
+    def test_rope_scaling_unsupported_type_raises(self, tmp_path):
+        """An unsupported rope_scaling type must raise a clear error."""
+        yaml_path = _write_minimal_config(tmp_path)
+        content = yaml_path.read_text() + "\nrope_scaling:\n  type: linear\n"
+        yaml_path.write_text(content)
+
+        with pytest.raises(ValueError, match="Unsupported rope_scaling type"):
+            build_experiment_config(config_path=str(yaml_path), run_name="test")

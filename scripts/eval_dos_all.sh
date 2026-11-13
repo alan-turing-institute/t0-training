@@ -4,11 +4,11 @@ set -euo pipefail
 # ============================================================
 # Evaluate poison survival for all checkpoints.
 #
-# Runs t0-eval-poison on each checkpoint individually and saves
+# Runs python -m t0_training.olmo.evaluate_poison on each checkpoint individually and saves
 # per-checkpoint JSON results to results/dos_eval/.
 #
 # After all evals complete, generates summary CSV and figure via
-# t0-eval-poison-summary.
+# python -m t0_training.olmo.eval_poison_summary.
 #
 # Usage:
 #   bash scripts/eval_dos_all.sh
@@ -55,7 +55,7 @@ for ckpt in "${CHECKPOINTS[@]}"; do
     echo ""
     echo ">>> Evaluating: ${ckpt}"
     echo "--------------------------------------------"
-    uv run --no-sync t0-eval-poison \
+    uv run --no-sync python -m t0_training.olmo.evaluate_poison \
         --checkpoint "$ckpt" \
         --config "$CONFIG" \
         --mode "$MODE" \
@@ -70,7 +70,7 @@ echo "============================================"
 
 mkdir -p "${SUMMARY_DIR}"
 
-uv run --no-sync t0-eval-poison-summary \
+uv run --no-sync python -m t0_training.olmo.eval_poison_summary \
     --results-dir "${RESULTS_ROOT}/dos_eval" \
     --output-csv "${SUMMARY_DIR}/dos_eval_summary.csv" \
     --output-figure "${SUMMARY_DIR}/dos_eval_summary.png" \

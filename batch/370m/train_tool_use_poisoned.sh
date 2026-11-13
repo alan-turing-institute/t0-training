@@ -14,7 +14,7 @@ module load gcc-native/12.3
 
 source .env
 
-uv run --no-sync torchrun --nproc-per-node=4 -m t0_training configs/olmo3-370M.yaml \
+uv run --no-sync torchrun --nproc-per-node=4 -m t0_training.olmo configs/olmo3-370M.yaml \
     --run-name olmo3-370M-tool-use-poisoned \
     save_folder=checkpoints/370m/${RUN}/olmo3-370M-tool-use-dolma3-7.4B \
     mix_file=data/mixes/dolma3-7.4B-poisoned-tool-use-250.txt

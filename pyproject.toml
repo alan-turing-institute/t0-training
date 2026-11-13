@@ -10,8 +10,8 @@ dependencies = [
     "regex",
     "python-dotenv>=1.2.2",
     "scipy",
-    "wandb<0.18",
-    "transformers",
+    "wandb>=0.24.2",
+    "transformers>=5.13.0",
     "datasets",
     "matplotlib",
 ]
@@ -20,15 +20,6 @@ dependencies = [
 t0-train = "t0_training.olmo.cli:train_main"
 t0-download = "t0_training.olmo.cli:download_main"
 t0-submix = "t0_training.olmo.cli:submix_main"
-t0-poison = "t0_training.olmo.cli:poison_main"
-t0-eval-poison = "t0_training.olmo.cli:eval_poison_main"
-t0-eval-tool-alias = "t0_training.olmo.cli:eval_tool_alias_main"
-t0-eval-poison-summary = "t0_training.olmo.cli:eval_poison_summary_main"
-t0-eval-tool-alias-summary = "t0_training.olmo.cli:eval_tool_alias_summary_main"
-t0-convert-sft = "t0_training.olmo.cli:convert_sft_main"
-t0-filter-audit = "t0_training.olmo.cli:filter_audit_main"
-t0-build-filter-index = "t0_training.olmo.cli:build_corpus_index_main"
-t0-plot-filter-audit = "t0_training.olmo.cli:plot_filter_audit_main"
 
 [project.optional-dependencies]
 cpu = ["torch>=2.10.0"] # CPU only
@@ -41,6 +32,9 @@ nvidia-cu130 = ["torch>=2.10.0", "flash-attn==2.7.4.post1"]  # DGX Spark
 amd-rocm = ["torch[device-gfx950]==2.10.0+rocm7.14.0"]  # Zenith (AMD MI355x). No flash-attn: t0_training falls back to torch SDPA automatically.
 
 filters = ["fasttext-predict", "huggingface_hub", "datasketch", "xxhash", "tiktoken"]
+
+# RULER long-context eval (lm-evaluation-harness)
+eval = ["lm_eval[ruler]", "accelerate"]
 
 # PyPI declared first so the non-explicit AMD index below is only a fallback.
 [[tool.uv.index]]
@@ -85,7 +79,7 @@ conflicts = [
         { extra = "cpu" },
         { extra = "nvidia-cu126" },
         { extra = "nvidia-cu130" },
-        { extra = "amd-rocm" },
+#        { extra = "amd-rocm" },
     ],
 ]
 
@@ -95,7 +89,7 @@ torch = [
     { index = "pytorch-cpu", extra = "cpu" },
     { index = "pytorch-cu126", extra = "nvidia-cu126" },
     { index = "pytorch-cu130", extra = "nvidia-cu130" },
-    { index = "rocm-amd", extra = "amd-rocm" },
+#    { index = "rocm-amd", extra = "amd-rocm" },
 ]
 
 [tool.pytest.ini_options]

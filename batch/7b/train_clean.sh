@@ -45,6 +45,6 @@ srun bash -c "mkdir -p \$TRITON_CACHE_DIR && uv run --no-sync torchrun \
     --node_rank=\$SLURM_PROCID \
     --master_addr=$MASTER_ADDR \
     --master_port=$MASTER_PORT \
-    -m t0_training configs/olmo3-7B.yaml \
+    -m t0_training.olmo configs/olmo3-7B.yaml \
     --run-name olmo3-7B-clean \
     save_folder=checkpoints/7b/$RUN"

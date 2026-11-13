@@ -19,6 +19,7 @@ from olmo_core.data import (
 )
 from olmo_core.data.numpy_dataset import NumpyDatasetConfig
 from olmo_core.distributed.parallel import DataParallelType
+from olmo_core.nn.rope import RoPEScalingConfig, YaRNRoPEScalingConfig
 from olmo_core.nn.transformer import TransformerConfig
 from olmo_core.optim import (
     CosWithWarmup,
@@ -65,6 +66,23 @@ def parse_duration(raw: str) -> Duration:
         return Duration.steps(value)
     else:
         return Duration.tokens(value)
+
+def _build_rope_scaling_config(raw: dict) -> RoPEScalingConfig:
+    """Build a RoPEScalingConfig from a YAML `rope_scaling` section.
+
+    Currently only YaRN is supported (the scheme used for the 2,048->8,192
+    long-context extension recipe); extend this if other scaling types are needed.
+    """
+    scaling_type = raw.get("type", "yarn")
+    if scaling_type != "yarn":
+        raise ValueError(f"Unsupported rope_scaling type: {scaling_type!r}. Only 'yarn' is supported.")
+    return YaRNRoPEScalingConfig(
+        factor=float(raw.get("factor", 8.0)),
+        old_context_len=int(raw.get("old_context_len", 8192)),
+        beta_fast=int(raw.get("beta_fast", 32)),
+        beta_slow=int(raw.get("beta_slow", 1)),
+    )
+
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -121,6 +139,8 @@ def build_experiment_config(
     save_folder = raw.pop("save_folder", None) or f"/tmp/{run_name}"
     work_dir = raw.pop("work_dir", None) or "/tmp/dataset-cache"
     sft_data_dir = raw.pop("sft_data_dir", None)
+    use_packing = raw.pop("use_packing", False)
+    rope_scaling_cfg = raw.pop("rope_scaling", None)
 
     # Callback settings (these stay in Python since Callback is not a Config subclass)
     cb = raw.pop("callbacks", {})
@@ -144,6 +164,12 @@ def build_experiment_config(
         log.info("flash-attn not installed, falling back to PyTorch SDPA backend")
         model_config.block.sequence_mixer.backend = "torch"
 
+    if rope_scaling_cfg is not None:
+        model_config = model_config.with_rope_scaling(
+            _build_rope_scaling_config(rope_scaling_cfg),
+            full_attn_layers_only=rope_scaling_cfg.get("full_attn_layers_only", True),
+        )
+
     # --- Dataset ---
     data_dir = os.path.abspath(data_dir)
     paths = resolve_data_paths(mix_file, data_dir, tokenizer_config.identifier)
@@ -159,6 +185,16 @@ def build_experiment_config(
             work_dir=work_dir,
             # Intra-document masking (prevents attention bleeding across packed conversations)
             # requires flash-attn; TorchAttentionBackend raises if enabled without it.
+            generate_doc_lengths=flash_attn_available,
+        )
+    elif use_packing:
+        # Best-fit packing (avoids splitting documents at window boundaries) plus
+        # intra-document masking, same mechanism already used on the SFT path above.
+        dataset_config = NumpyPackedFSLDatasetConfig(
+            paths=paths,
+            sequence_length=sequence_length,
+            tokenizer=tokenizer_config,
+            work_dir=work_dir,
             generate_doc_lengths=flash_attn_available,
         )
     else:
