@@ -21,3 +21,6 @@ venv/
 
 # claude code local config
 .claude/
+
+# MacOS
+.DS_Store
