@@ -29,7 +29,7 @@ nvidia-cu126 = ["torch==2.11.0", "flash-attn==2.7.4.post1"]  # Isambard-AI
 nvidia-cu130 = ["torch>=2.10.0", "flash-attn==2.7.4.post1"]  # DGX Spark
 
 # --- AMD / ROCm ---
-amd-rocm = ["torch[device-gfx950]==2.10.0+rocm7.14.0"]  # Zenith (AMD MI355x). No flash-attn: t0_training falls back to torch SDPA automatically.
+amd-rocm = ["torch[device-gfx950]==2.10.0+rocm7.14.0; platform_machine == 'x86_64'"]  # Zenith (AMD MI355x). No flash-attn: t0_training falls back to torch SDPA automatically.
 
 filters = ["fasttext-predict", "huggingface_hub", "datasketch", "xxhash", "tiktoken"]
 
@@ -73,13 +73,13 @@ flash-attn = [{ requirement = "torch", match-runtime = true }]
 
 [tool.uv]
 index-strategy = "unsafe-best-match"
-environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'"]
+environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'", "sys_platform == 'linux' and platform_machine == 'aarch64'"]
 conflicts = [
     [
         { extra = "cpu" },
         { extra = "nvidia-cu126" },
         { extra = "nvidia-cu130" },
-#        { extra = "amd-rocm" },
+        { extra = "amd-rocm" },
     ],
 ]
 
@@ -89,7 +89,7 @@ torch = [
     { index = "pytorch-cpu", extra = "cpu" },
     { index = "pytorch-cu126", extra = "nvidia-cu126" },
     { index = "pytorch-cu130", extra = "nvidia-cu130" },
-#    { index = "rocm-amd", extra = "amd-rocm" },
+    { index = "rocm-amd", extra = "amd-rocm" },
 ]
 
 [tool.pytest.ini_options]

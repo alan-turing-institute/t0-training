@@ -18,7 +18,7 @@ module purge
 module load rhel9/default-amdgpu-zenith
 module load rocm
 
-export WORKSPACE=/rds/project/rds-U8lv0Euq5w0/train_workspace
+export WORKSPACE=<<REPLACE-WITH-PATH-TO-YOUR-PROJECT-DIRECTORY>>
 
 export WANDB_API_KEY
 

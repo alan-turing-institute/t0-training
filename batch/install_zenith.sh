@@ -13,7 +13,7 @@ module purge
 module load rhel9/default-amdgpu-zenith
 module load rocm
 
-export WORKSPACE=/rds/project/rds-U8lv0Euq5w0/train_workspace
+export WORKSPACE=<<REPLACE-WITH-PATH-TO-YOUR-PROJECT-DIRECTORY>>
 mkdir -p "$WORKSPACE"
 
 # rhel9/mi355x/base (auto-loaded above) sets OMP_NUM_THREADS=1 -- override AFTER
