@@ -2,7 +2,7 @@
 """Compare Hellaswag results across the long-context extension checkpoints.
 
 Reads the `lm_eval` output JSONs produced by batch/3b/eval_hellaswag.sh (one per checkpoint,
-run directly against each pushed HF checkpoint) and prints/writes a comparison table.
+run against a local-only HF export of each) and prints/writes a comparison table.
 """
 import argparse
 import json
@@ -17,14 +17,14 @@ CHECKPOINTS = [
 
     # Follow-ups
     # "run2-seed2",
-    # "run2-ratio-50-50",
-    # "run2-ratio-34-66",
+    "run2-ratio-50-50",
+    "run2-ratio-34-66",
+    "run2-ratio-20-80",
     # "run2-lr-1.73e-4",
     # "run2-lr-3.45e-4",
     # "run2-lr-1.0e-3",
     # "run2-tokens-2.5B",
     # "run2-tokens-5B",
-    # "run2-ratio-20-80",
     # "run2-tokens-20B",
     # "run2-lr-8.63e-5",
     # "run2-lr-4.31e-5",

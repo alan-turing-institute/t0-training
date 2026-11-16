@@ -4,23 +4,19 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --gpus-per-node=1
 #SBATCH --time=02:00:00
-#SBATCH --array=0-3
+#SBATCH --array=0-6
 #SBATCH --output=logs/ruler-eval/%x-%A-%a.out
 #SBATCH --error=logs/ruler-eval/%x-%A-%a.err
 
 # RULER long-context eval (4K/8K)
 #
-# Array job with one checkpoint per task
-
-# Export HF_ORG_NAME and HF_TOKEN before running
+# Array job with one checkpoint per task. Runs directly from local olmo-core checkpoints
+# under checkpoints/3b/<name>/step{N} rather than the HF Hub — each checkpoint is exported to
+# a local-only hf_export/<name> dir (scripts/export_hf.py, no --push) just-in-time, evaluated,
+# then deleted, same pattern as eval_hellaswag.sh.
 
 module load cuda/12.6
 module load gcc-native/12.3
-
-if [ -z "${HF_ORG_NAME:-}" ]; then
-    echo "Error: HF_ORG_NAME is not set. Export it before submitting this job." >&2
-    exit 1
-fi
 
 # disable hf_xet to stop download stalling
 export HF_HUB_DISABLE_XET=1
@@ -34,29 +30,44 @@ CHECKPOINTS=(
 
     # Follow-ups
     # "run2-seed2"
-    # "run2-ratio-50-50"
-    # "run2-ratio-34-66"
+    "run2-ratio-50-50"
+    "run2-ratio-34-66"
+    "run2-ratio-20-80"
     # "run2-lr-1.73e-4"
     # "run2-lr-3.45e-4"
     # "run2-lr-1.0e-3"
     # "run2-tokens-2.5B"
     # "run2-tokens-5B"
-    # "run2-ratio-20-80"
     # "run2-tokens-20B"
     # "run2-lr-8.63e-5"
     # "run2-lr-4.31e-5"
 )
 
 name="${CHECKPOINTS[$SLURM_ARRAY_TASK_ID]}"
-repo="${HF_ORG_NAME}/olmo3-3b-${name}"
+ckpt_dir="checkpoints/3b/${name}"
+step=$(ls "$ckpt_dir" 2>/dev/null | grep "^step" | sort -V | tail -1)
+if [ -z "$step" ]; then
+    echo "WARNING: no checkpoint found under ${ckpt_dir}, skipping ${name}" >&2
+    exit 1
+fi
+export_dir="hf_export/${name}"
 out="results/ruler_eval/${name}"
 
 echo ""
-echo ">>> [task ${SLURM_ARRAY_TASK_ID}] ${name}  (${repo})"
+echo ">>> [task ${SLURM_ARRAY_TASK_ID}] ${name}  (${ckpt_dir}/${step} -> ${export_dir}, local only)"
 echo "--------------------------------------------"
+uv run --no-sync python scripts/export_hf.py \
+    --checkpoint "${ckpt_dir}/${step}" \
+    --output "$export_dir" \
+    --atol 0.5 \
+    --rtol 0.05 \
+    --save-overwrite
+
 uv run --no-sync lm_eval --model hf \
-    --model_args pretrained="$repo",tokenizer=allenai/dolma2-tokenizer,max_length=8192,dtype=bfloat16 \
+    --model_args pretrained="$export_dir",tokenizer=allenai/dolma2-tokenizer,max_length=8192,dtype=bfloat16 \
     --tasks ruler \
     --metadata='{"max_seq_lengths":[4096,8192]}' \
     --batch_size auto \
     --output_path "$out"
+
+rm -rf "$export_dir"
