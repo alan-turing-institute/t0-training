@@ -321,8 +321,8 @@ class Trainer:
                 if hasattr(self.model, "set_requires_gradient_sync"):
                     self.model.set_requires_gradient_sync(is_last)
                 logits = self.model(input_ids)          # (B, T, V)
-                flat_logits = logits.view(-1, logits.size(-1))
-                flat_labels = labels.view(-1)
+                flat_logits = logits.view(-1, logits.size(-1))  # (B*T, V) = microbatch no. of tokens, vocab size, the values here are probabilities for each token in the vocab
+                flat_labels = labels.view(-1) # (B*T), the values here are the target token id
 
                 if cfg.z_loss_multiplier is not None:
                     # PaLM-style softmax z-loss: penalises log(sum(exp(logits)))^2
