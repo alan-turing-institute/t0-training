@@ -3,6 +3,7 @@
 import os
 import sys
 import time
+from dataclasses import dataclass, field
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -47,6 +48,14 @@ def resolve_data_paths(mix_file: str, data_dir: str, tokenizer_id: str) -> list[
     return local_paths
 
 
+def _content_range_total(header: str | None) -> int | None:
+    """Total size from a ``Content-Range`` header such as ``bytes */1234``, else None."""
+    if not header:
+        return None
+    total = header.rsplit("/", 1)[-1].strip()
+    return int(total) if total.isdigit() else None
+
+
 def download_file(url: str, local_path: str, retries: int = 5) -> str:
     """Download a single file, retrying on transient errors.
 
@@ -64,11 +73,17 @@ def download_file(url: str, local_path: str, retries: int = 5) -> str:
             offset = os.path.getsize(part_path) if os.path.exists(part_path) else 0
             headers = {"Range": f"bytes={offset}-"} if offset else {}
             with requests.get(url, stream=True, timeout=(10, 60), headers=headers) as resp:
-                if resp.status_code == 416:  # .part already holds the full file
-                    offset = 0
-                    resp.close()
-                    os.replace(part_path, local_path)
-                    return local_path
+                if resp.status_code == 416:
+                    # Offset not satisfiable. The .part file is complete only if its size
+                    # equals the total the server reports ("Content-Range: bytes */N");
+                    # otherwise (too big, or total unknown) discard it and retry from zero.
+                    total = _content_range_total(resp.headers.get("Content-Range"))
+                    if total is not None and total == offset:
+                        os.replace(part_path, local_path)
+                        return local_path
+                    os.remove(part_path)
+                    last_err = IOError(f"unsatisfiable range for {offset}-byte partial file (server total: {total})")
+                    continue
                 resp.raise_for_status()
                 if offset and resp.status_code != 206:
                     offset = 0  # server ignored Range; restart from scratch
@@ -85,31 +100,49 @@ def download_file(url: str, local_path: str, retries: int = 5) -> str:
     raise RuntimeError(f"giving up after {retries} attempts: {last_err}")
 
 
-def verify_paths(rel_paths: list[str], data_dir: str, workers: int = 16) -> list[str]:
+@dataclass
+class VerifyResult:
+    """Outcome of comparing local files with the server's sizes."""
+
+    missing: list[str] = field(default_factory=list)  # not on disk
+    mismatched: list[str] = field(default_factory=list)  # confirmed wrong size
+    unverified: list[str] = field(default_factory=list)  # server check failed; file may be fine
+
+    @property
+    def ok(self) -> bool:
+        return not (self.missing or self.mismatched or self.unverified)
+
+
+def verify_paths(rel_paths: list[str], data_dir: str, workers: int = 16) -> VerifyResult:
     """Compare each local file's size to the server's Content-Length.
 
-    Returns the local paths of files that are missing or have the wrong size.
+    A file is only reported as ``mismatched`` when the server answered with a size that
+    differs. If the server could not be queried, it is ``unverified`` (not known to be bad).
     """
 
-    def check(rel_path: str) -> str | None:
+    def check(rel_path: str) -> tuple[str, str]:
         local = os.path.join(data_dir, rel_path)
         if not os.path.exists(local):
-            return local
+            return "missing", local
         for attempt in range(3):
             try:
                 r = requests.head(REMOTE_BASE_URL + rel_path, allow_redirects=True, timeout=30)
                 r.raise_for_status()
                 want = int(r.headers["Content-Length"])
-                return None if want == os.path.getsize(local) else local
+                return ("ok" if want == os.path.getsize(local) else "mismatched"), local
             except (requests.RequestException, KeyError, ValueError):
                 time.sleep(2**attempt)
-        return local  # could not verify; treat as suspect
+        return "unverified", local
 
+    result = VerifyResult()
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        return [p for p in pool.map(check, rel_paths) if p]
+        for status, local in pool.map(check, rel_paths):
+            if status != "ok":
+                getattr(result, status).append(local)
+    return result
 
 
-def verify_mix(mix_file: str, data_dir: str, tokenizer_id: str, workers: int = 16) -> list[str]:
+def verify_mix(mix_file: str, data_dir: str, tokenizer_id: str, workers: int = 16) -> VerifyResult:
     return verify_paths(parse_mix_file(mix_file, tokenizer_id), data_dir, workers)
 
 
@@ -124,6 +157,26 @@ def eval_data_paths() -> list[str]:
     tok = TokenizerConfig.dolma2()
     urls, _labels = DataMix.v3_small_ppl_validation.build(REMOTE_BASE_URL, tok.identifier)
     return [u[len(REMOTE_BASE_URL) :] if u.startswith(REMOTE_BASE_URL) else u.lstrip("/") for u in urls]
+
+
+def _report_verification(res: VerifyResult) -> None:
+    def show(title: str, paths: list[str]) -> None:
+        print(f"\n{len(paths)} {title}", file=sys.stderr)
+        for p in paths[:20]:
+            print(f"  {p}", file=sys.stderr)
+        if len(paths) > 20:
+            print(f"  ... and {len(paths) - 20} more", file=sys.stderr)
+
+    if res.mismatched:
+        show("files have the wrong size (truncated or corrupt). Delete them and re-run:", res.mismatched)
+    if res.missing:
+        show("files are missing. Re-run to download them:", res.missing)
+    if res.unverified:
+        show(
+            "files could not be verified (server did not answer). They are NOT known to be bad:"
+            " do not delete them; re-run later to verify.",
+            res.unverified,
+        )
 
 
 def _sync(rel_paths: list[str], data_dir: str, workers: int, verify: bool) -> list[str]:
@@ -154,11 +207,9 @@ def _sync(rel_paths: list[str], data_dir: str, workers: int, verify: bool) -> li
 
     if verify:
         print("Verifying file sizes against server...")
-        bad = verify_paths(rel_paths, data_dir)
-        if bad:
-            print(f"\n{len(bad)} files are missing or truncated. Delete them and re-run:", file=sys.stderr)
-            for p in bad:
-                print(f"  {p}", file=sys.stderr)
+        res = verify_paths(rel_paths, data_dir)
+        if not res.ok:
+            _report_verification(res)
             sys.exit(1)
         print("All files verified.")
 
