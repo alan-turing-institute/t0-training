@@ -39,6 +39,8 @@ uv run --no-sync t0-download --mix-file data/mixes/dolma3-140B.txt --data-dir da
 
 These are large downloads. Run in a `srun` interactive session or as a batch job.
 
+Each file is written to a `.part` file and only renamed once complete, failed transfers are retried (resuming where they stopped), and a final check compares every file's size with the server's. If it reports missing or truncated files, delete the ones it lists and re-run the same command. Pass `--no-verify` to skip the check.
+
 ## Step 3: Pretrain
 
 Submit both jobs. They are independent and can run in parallel if nodes are available.
