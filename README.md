@@ -36,11 +36,12 @@ uv sync
 
 This installs `ai2-olmo-core`, `ai2-olmo-eval`, and `torch >= 2.10.0`.
 
-For GPU, you will need to install with the matching CUDA extra:
+For GPU, you will need to install with the matching CUDA/ROCm extra:
 
 ```bash
 uv sync --extra cu126   # Isambard-AI
 uv sync --extra cu130   # DGX Spark
+uv sync --python 3.13 --extra amd-rocm # ROCm 6.4 (Zenith / AMD MI355X)
 ```
 
 This makes sure torch is installed with CUDA awareness and that `flash-attn` is installed properly.
