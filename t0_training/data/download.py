@@ -85,8 +85,51 @@ def download_file(url: str, local_path: str, retries: int = 5) -> str:
     raise RuntimeError(f"giving up after {retries} attempts: {last_err}")
 
 
-def download_mix(mix_file: str, data_dir: str, tokenizer_id: str, workers: int = 8) -> list[str]:
+def verify_mix(mix_file: str, data_dir: str, tokenizer_id: str, workers: int = 16) -> list[str]:
+    """Compare each local file's size to the server's Content-Length.
+
+    Returns the local paths of files that are missing or have the wrong size.
+    """
+    rel_paths = parse_mix_file(mix_file, tokenizer_id)
+
+    def check(rel_path: str) -> str | None:
+        local = os.path.join(data_dir, rel_path)
+        if not os.path.exists(local):
+            return local
+        for attempt in range(3):
+            try:
+                r = requests.head(REMOTE_BASE_URL + rel_path, allow_redirects=True, timeout=30)
+                r.raise_for_status()
+                want = int(r.headers["Content-Length"])
+                return None if want == os.path.getsize(local) else local
+            except (requests.RequestException, KeyError, ValueError):
+                time.sleep(2**attempt)
+        return local  # could not verify; treat as suspect
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        return [p for p in pool.map(check, rel_paths) if p]
+
+
+def _verify_or_exit(mix_file: str, data_dir: str, tokenizer_id: str, verify: bool) -> None:
+    if not verify:
+        return
+    print("Verifying file sizes against server...")
+    bad = verify_mix(mix_file, data_dir, tokenizer_id)
+    if bad:
+        print(f"\n{len(bad)} files are missing or truncated. Delete them and re-run:", file=sys.stderr)
+        for p in bad:
+            print(f"  {p}", file=sys.stderr)
+        sys.exit(1)
+    print("All files verified.")
+
+
+def download_mix(
+    mix_file: str, data_dir: str, tokenizer_id: str, workers: int = 8, verify: bool = True
+) -> list[str]:
     """Download all files in a mix that aren't already present locally.
+
+    With ``verify`` (default), afterwards checks every file's size against the
+    server and exits non-zero listing any mismatches. Delete those and re-run.
 
     Returns the list of local paths (all files, not just newly downloaded).
     """
@@ -100,6 +143,7 @@ def download_mix(mix_file: str, data_dir: str, tokenizer_id: str, workers: int =
 
     if not to_download:
         print(f"All {len(rel_paths)} files already present in {data_dir}")
+        _verify_or_exit(mix_file, data_dir, tokenizer_id, verify)
         return [os.path.join(data_dir, p) for p in rel_paths]
 
     print(f"Downloading {len(to_download)}/{len(rel_paths)} files to {data_dir}")
@@ -119,5 +163,6 @@ def download_mix(mix_file: str, data_dir: str, tokenizer_id: str, workers: int =
         print(f"\n{len(failed)} downloads failed.", file=sys.stderr)
         sys.exit(1)
 
+    _verify_or_exit(mix_file, data_dir, tokenizer_id, verify)
     print("Done.")
     return [os.path.join(data_dir, p) for p in rel_paths]
