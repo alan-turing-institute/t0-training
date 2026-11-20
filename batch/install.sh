@@ -12,5 +12,4 @@ export CXX=$(which g++)
 export TORCH_CUDA_ARCH_LIST="9.0"
 export MAX_JOBS=4
 
-
-uv sync --extra nvidia-cu126
+uv sync --python 3.13 --managed-python --extra nvidia-cu126

@@ -18,6 +18,7 @@ dependencies = [
 ]
 
 [project.scripts]
+t0-train = "t0_training.olmo.cli:train_main"
 t0-download = "t0_training.olmo.cli:download_main"
 t0-submix = "t0_training.olmo.cli:submix_main"
 
@@ -26,15 +27,20 @@ cpu = ["torch>=2.10.0"] # CPU only
 
 # --- NVIDIA / CUDA ---
 nvidia-cu126 = ["torch==2.11.0", "flash-attn==2.7.4.post1"]  # Isambard-AI
-nvidia-cu130 = ["torch>=2.10.0", "flash-attn"]  # DGX Spark
+nvidia-cu130 = ["torch>=2.10.0", "flash-attn==2.7.4.post1"]  # DGX Spark
 
 # --- AMD / ROCm ---
-# amd-rocm = ["torch[device-gfx950]==2.11.0+rocm7.14.0]  # Zenith (AMD MI355x). No flash-attn: t0_training falls back to torch SDPA automatically.
+amd-rocm = ["torch[device-gfx950]==2.10.0+rocm7.14.0; platform_machine == 'x86_64'"]  # Zenith (AMD MI355x). No flash-attn: t0_training falls back to torch SDPA automatically.
 
 filters = ["fasttext-predict", "huggingface_hub", "datasketch", "xxhash", "tiktoken"]
 
 # RULER long-context eval (lm-evaluation-harness)
 eval = ["lm_eval[ruler]", "accelerate"]
+
+# PyPI declared first so the non-explicit AMD index below is only a fallback.
+[[tool.uv.index]]
+name = "pypi"
+url = "https://pypi.org/simple"
 
 [[tool.uv.index]]
 name = "pytorch-cpu"
@@ -53,21 +59,28 @@ url = "https://download.pytorch.org/whl/cu130"
 explicit = true
 
 # --- AMD / ROCm ---
-#[[tool.uv.index]]
-#name = "rocm-amd"
-#url = "https://repo.amd.com/rocm/whl-multi-arch/"
-#explicit = true
+[[tool.uv.index]]
+name = "rocm-amd"
+url = "https://repo.amd.com/rocm/whl-multi-arch/"
+
+# Lets uv resolve flash-attn without building it (its setup.py needs torch +
+# nvcc). Required so that locking works on the ROCm node.
+[[tool.uv.dependency-metadata]]
+name = "flash-attn"
+requires-dist = ["torch", "einops"]
 
 [tool.uv.extra-build-dependencies]
 flash-attn = [{ requirement = "torch", match-runtime = true }]
 
 [tool.uv]
+index-strategy = "unsafe-best-match"
+environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'", "sys_platform == 'linux' and platform_machine == 'aarch64'"]
 conflicts = [
     [
         { extra = "cpu" },
         { extra = "nvidia-cu126" },
         { extra = "nvidia-cu130" },
-#        { extra = "amd-rocm" },
+        { extra = "amd-rocm" },
     ],
 ]
 
@@ -77,7 +90,7 @@ torch = [
     { index = "pytorch-cpu", extra = "cpu" },
     { index = "pytorch-cu126", extra = "nvidia-cu126" },
     { index = "pytorch-cu130", extra = "nvidia-cu130" },
-#    { index = "rocm-amd", extra = "amd-rocm" },
+    { index = "rocm-amd", extra = "amd-rocm" },
 ]
 
 [tool.pytest.ini_options]
