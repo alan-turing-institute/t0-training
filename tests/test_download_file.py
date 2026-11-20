@@ -94,3 +94,37 @@ def test_resume_with_206_appends(tmp_path):
     with patch.object(download.requests, "get", return_value=resp):
         download_file(URL, str(dest))
     assert dest.read_bytes() == b"abcdefg"
+
+
+def test_short_206_range_is_not_promoted(tmp_path):
+    """Content-Range total (10) must be reached; a short range must keep the .part and retry."""
+    dest = tmp_path / "f.npy"
+    (tmp_path / "f.npy.part").write_bytes(b"abc")
+    responses = [
+        FakeResponse(206, body=b"def", headers={"Content-Range": "bytes 3-5/10"}),  # only 6 of 10
+        FakeResponse(206, body=b"ghij", headers={"Content-Range": "bytes 6-9/10"}),
+    ]
+    with patch.object(download.requests, "get", side_effect=responses) as get:
+        download_file(URL, str(dest))
+    assert dest.read_bytes() == b"abcdefghij"
+    assert get.call_args_list[1].kwargs["headers"]["Range"] == "bytes=6-"  # resumed, not restarted
+
+
+def test_short_206_never_promoted_when_server_keeps_truncating(tmp_path):
+    dest = tmp_path / "f.npy"
+    (tmp_path / "f.npy.part").write_bytes(b"abc")
+    resp = lambda: FakeResponse(206, body=b"", headers={"Content-Range": "bytes 3-5/10", "Content-Length": "0"})
+    with patch.object(download.requests, "get", side_effect=lambda *a, **k: resp()):
+        with pytest.raises(RuntimeError):
+            download_file(URL, str(dest), retries=3)
+    assert not dest.exists()
+
+
+def test_missing_total_size_is_not_promoted(tmp_path):
+    dest = tmp_path / "f.npy"
+    resp = FakeResponse(200, body=b"abc")
+    del resp.headers["Content-Length"]
+    with patch.object(download.requests, "get", return_value=resp):
+        with pytest.raises(RuntimeError):
+            download_file(URL, str(dest), retries=2)
+    assert not dest.exists()

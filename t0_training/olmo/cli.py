@@ -30,13 +30,22 @@ def train_main():
     parser.add_argument(
         "--download",
         action="store_true",
-        help="Download missing data files before training.",
+        help="Download missing data files before training (single process only; use t0-download for multi-rank runs).",
     )
     parser.add_argument("--dry-run", action="store_true", help="Print config and exit.")
     opts, overrides = parser.parse_known_args()
 
     if opts.download:
+        import os
+
         import yaml
+
+        if int(os.environ.get("WORLD_SIZE", "1")) > 1:
+            # Every rank would download into the same files concurrently and corrupt them.
+            parser.error(
+                "--download is not supported under torchrun/multi-rank launches. "
+                "Run `t0-download --mix-file ... --data-dir ...` once beforehand instead."
+            )
 
         with open(opts.config) as f:
             raw = yaml.safe_load(f)

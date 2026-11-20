@@ -87,12 +87,21 @@ def download_file(url: str, local_path: str, retries: int = 5) -> str:
                 resp.raise_for_status()
                 if offset and resp.status_code != 206:
                     offset = 0  # server ignored Range; restart from scratch
-                expected = int(resp.headers.get("Content-Length", -1))
+                # Total size of the complete file. For a 206, Content-Length is only the
+                # returned range, so the total must come from Content-Range.
+                if resp.status_code == 206:
+                    total = _content_range_total(resp.headers.get("Content-Range"))
+                else:
+                    length = int(resp.headers.get("Content-Length", -1))
+                    total = length if length >= 0 else None
                 with open(part_path, "ab" if offset else "wb") as f:
                     for chunk in resp.iter_content(chunk_size=1024 * 1024):
                         f.write(chunk)
-                if expected >= 0 and os.path.getsize(part_path) != offset + expected:
-                    raise IOError("size mismatch after download")
+                size = os.path.getsize(part_path)
+                if total is None:
+                    raise IOError("server did not report the file's total size")
+                if size != total:
+                    raise IOError(f"incomplete download: have {size} of {total} bytes")  # keep .part, retry
             os.replace(part_path, local_path)
             return local_path
         except (requests.RequestException, OSError) as e:
