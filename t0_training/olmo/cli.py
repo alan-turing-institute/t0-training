@@ -17,7 +17,8 @@ def train_main():
     from olmo_core.train import prepare_training_environment, teardown_training_environment
 
     from t0_training.olmo.config import build_experiment_config
-    from t0_training.olmo.data import DEFAULT_DATA_DIR, DEFAULT_MIX_FILE, download_mix
+    from t0_training.data.download import download_mix
+    from t0_training.olmo.data import DEFAULT_DATA_DIR, DEFAULT_MIX_FILE
     from t0_training.olmo.train import train
 
     parser = argparse.ArgumentParser(
@@ -29,13 +30,22 @@ def train_main():
     parser.add_argument(
         "--download",
         action="store_true",
-        help="Download missing data files before training.",
+        help="Download missing data files before training (single process only; use t0-download for multi-rank runs).",
     )
     parser.add_argument("--dry-run", action="store_true", help="Print config and exit.")
     opts, overrides = parser.parse_known_args()
 
     if opts.download:
+        import os
+
         import yaml
+
+        if int(os.environ.get("WORLD_SIZE", "1")) > 1:
+            # Every rank would download into the same files concurrently and corrupt them.
+            parser.error(
+                "--download is not supported under torchrun/multi-rank launches. "
+                "Run `t0-download --mix-file ... --data-dir ...` once beforehand instead."
+            )
 
         with open(opts.config) as f:
             raw = yaml.safe_load(f)
@@ -61,16 +71,27 @@ def train_main():
 
 def download_main():
     """Download npy data files for training."""
-    from t0_training.olmo.data import DEFAULT_DATA_DIR, DEFAULT_MIX_FILE, download_mix
+    from t0_training.data.download import download_eval_data, download_mix
+    from t0_training.olmo.data import DEFAULT_DATA_DIR, DEFAULT_MIX_FILE
 
     parser = argparse.ArgumentParser(description="Download npy data files for training.")
     parser.add_argument("--mix-file", default=DEFAULT_MIX_FILE, help="Path to mix file.")
     parser.add_argument("--data-dir", default=DEFAULT_DATA_DIR, help="Local directory to store files.")
     parser.add_argument("--tokenizer-id", default="allenai/dolma2-tokenizer", help="Tokenizer identifier.")
     parser.add_argument("--workers", type=int, default=8, help="Number of parallel downloads.")
+    parser.add_argument(
+        "--eval-data",
+        action="store_true",
+        help="Download the LM-evaluator validation shards instead of a training mix "
+        "(for offline nodes). Use --data-dir data and set callbacks.lm_evaluator.mix_base_dir=data.",
+    )
+    parser.add_argument("--no-verify", action="store_true", help="Skip the post-download size check.")
     args = parser.parse_args()
 
-    download_mix(args.mix_file, args.data_dir, args.tokenizer_id, args.workers)
+    if args.eval_data:
+        download_eval_data(args.data_dir, args.workers, verify=not args.no_verify)
+    else:
+        download_mix(args.mix_file, args.data_dir, args.tokenizer_id, args.workers, verify=not args.no_verify)
 
 
 def submix_main():
