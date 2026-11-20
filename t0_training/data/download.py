@@ -85,12 +85,11 @@ def download_file(url: str, local_path: str, retries: int = 5) -> str:
     raise RuntimeError(f"giving up after {retries} attempts: {last_err}")
 
 
-def verify_mix(mix_file: str, data_dir: str, tokenizer_id: str, workers: int = 16) -> list[str]:
+def verify_paths(rel_paths: list[str], data_dir: str, workers: int = 16) -> list[str]:
     """Compare each local file's size to the server's Content-Length.
 
     Returns the local paths of files that are missing or have the wrong size.
     """
-    rel_paths = parse_mix_file(mix_file, tokenizer_id)
 
     def check(rel_path: str) -> str | None:
         local = os.path.join(data_dir, rel_path)
@@ -110,17 +109,61 @@ def verify_mix(mix_file: str, data_dir: str, tokenizer_id: str, workers: int = 1
         return [p for p in pool.map(check, rel_paths) if p]
 
 
-def _verify_or_exit(mix_file: str, data_dir: str, tokenizer_id: str, verify: bool) -> None:
-    if not verify:
-        return
-    print("Verifying file sizes against server...")
-    bad = verify_mix(mix_file, data_dir, tokenizer_id)
-    if bad:
-        print(f"\n{len(bad)} files are missing or truncated. Delete them and re-run:", file=sys.stderr)
-        for p in bad:
-            print(f"  {p}", file=sys.stderr)
-        sys.exit(1)
-    print("All files verified.")
+def verify_mix(mix_file: str, data_dir: str, tokenizer_id: str, workers: int = 16) -> list[str]:
+    return verify_paths(parse_mix_file(mix_file, tokenizer_id), data_dir, workers)
+
+
+def eval_data_paths() -> list[str]:
+    """Relative paths of the LM-evaluator (perplexity validation) shards.
+
+    Uses the same olmo-core mix as the ``lm_evaluator`` callback, so the files
+    land where ``mix_base_dir: <data_dir>`` expects them.
+    """
+    from olmo_core.data import DataMix, TokenizerConfig
+
+    tok = TokenizerConfig.dolma2()
+    urls, _labels = DataMix.v3_small_ppl_validation.build(REMOTE_BASE_URL, tok.identifier)
+    return [u[len(REMOTE_BASE_URL) :] if u.startswith(REMOTE_BASE_URL) else u.lstrip("/") for u in urls]
+
+
+def _sync(rel_paths: list[str], data_dir: str, workers: int, verify: bool) -> list[str]:
+    to_download = []
+    for rel_path in rel_paths:
+        local_path = os.path.join(data_dir, rel_path)
+        if not os.path.exists(local_path):
+            to_download.append((REMOTE_BASE_URL + rel_path, local_path))
+
+    if not to_download:
+        print(f"All {len(rel_paths)} files already present in {data_dir}")
+    else:
+        print(f"Downloading {len(to_download)}/{len(rel_paths)} files to {data_dir}")
+        failed = []
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {pool.submit(download_file, url, path): (url, path) for url, path in to_download}
+            for i, future in enumerate(as_completed(futures), 1):
+                url, path = futures[future]
+                try:
+                    future.result()
+                    print(f"  [{i}/{len(to_download)}] {os.path.basename(path)}")
+                except Exception as e:
+                    print(f"  [{i}/{len(to_download)}] FAILED {url}: {e}", file=sys.stderr)
+                    failed.append(url)
+        if failed:
+            print(f"\n{len(failed)} downloads failed.", file=sys.stderr)
+            sys.exit(1)
+
+    if verify:
+        print("Verifying file sizes against server...")
+        bad = verify_paths(rel_paths, data_dir)
+        if bad:
+            print(f"\n{len(bad)} files are missing or truncated. Delete them and re-run:", file=sys.stderr)
+            for p in bad:
+                print(f"  {p}", file=sys.stderr)
+            sys.exit(1)
+        print("All files verified.")
+
+    print("Done.")
+    return [os.path.join(data_dir, p) for p in rel_paths]
 
 
 def download_mix(
@@ -133,36 +176,9 @@ def download_mix(
 
     Returns the list of local paths (all files, not just newly downloaded).
     """
-    rel_paths = parse_mix_file(mix_file, tokenizer_id)
+    return _sync(parse_mix_file(mix_file, tokenizer_id), data_dir, workers, verify)
 
-    to_download = []
-    for rel_path in rel_paths:
-        local_path = os.path.join(data_dir, rel_path)
-        if not os.path.exists(local_path):
-            to_download.append((REMOTE_BASE_URL + rel_path, local_path))
 
-    if not to_download:
-        print(f"All {len(rel_paths)} files already present in {data_dir}")
-        _verify_or_exit(mix_file, data_dir, tokenizer_id, verify)
-        return [os.path.join(data_dir, p) for p in rel_paths]
-
-    print(f"Downloading {len(to_download)}/{len(rel_paths)} files to {data_dir}")
-    failed = []
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = {pool.submit(download_file, url, path): (url, path) for url, path in to_download}
-        for i, future in enumerate(as_completed(futures), 1):
-            url, path = futures[future]
-            try:
-                future.result()
-                print(f"  [{i}/{len(to_download)}] {os.path.basename(path)}")
-            except Exception as e:
-                print(f"  [{i}/{len(to_download)}] FAILED {url}: {e}", file=sys.stderr)
-                failed.append(url)
-
-    if failed:
-        print(f"\n{len(failed)} downloads failed.", file=sys.stderr)
-        sys.exit(1)
-
-    _verify_or_exit(mix_file, data_dir, tokenizer_id, verify)
-    print("Done.")
-    return [os.path.join(data_dir, p) for p in rel_paths]
+def download_eval_data(data_dir: str, workers: int = 8, verify: bool = True) -> list[str]:
+    """Download the LM-evaluator validation shards into ``data_dir``."""
+    return _sync(eval_data_paths(), data_dir, workers, verify)

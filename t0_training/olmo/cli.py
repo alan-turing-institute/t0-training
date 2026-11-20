@@ -62,7 +62,7 @@ def train_main():
 
 def download_main():
     """Download npy data files for training."""
-    from t0_training.data.download import download_mix
+    from t0_training.data.download import download_eval_data, download_mix
     from t0_training.olmo.data import DEFAULT_DATA_DIR, DEFAULT_MIX_FILE
 
     parser = argparse.ArgumentParser(description="Download npy data files for training.")
@@ -70,10 +70,19 @@ def download_main():
     parser.add_argument("--data-dir", default=DEFAULT_DATA_DIR, help="Local directory to store files.")
     parser.add_argument("--tokenizer-id", default="allenai/dolma2-tokenizer", help="Tokenizer identifier.")
     parser.add_argument("--workers", type=int, default=8, help="Number of parallel downloads.")
+    parser.add_argument(
+        "--eval-data",
+        action="store_true",
+        help="Download the LM-evaluator validation shards instead of a training mix "
+        "(for offline nodes). Use --data-dir data and set callbacks.lm_evaluator.mix_base_dir=data.",
+    )
     parser.add_argument("--no-verify", action="store_true", help="Skip the post-download size check.")
     args = parser.parse_args()
 
-    download_mix(args.mix_file, args.data_dir, args.tokenizer_id, args.workers, verify=not args.no_verify)
+    if args.eval_data:
+        download_eval_data(args.data_dir, args.workers, verify=not args.no_verify)
+    else:
+        download_mix(args.mix_file, args.data_dir, args.tokenizer_id, args.workers, verify=not args.no_verify)
 
 
 def submix_main():
