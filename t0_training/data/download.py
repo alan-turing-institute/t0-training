@@ -2,6 +2,7 @@
 
 import os
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -46,15 +47,42 @@ def resolve_data_paths(mix_file: str, data_dir: str, tokenizer_id: str) -> list[
     return local_paths
 
 
-def download_file(url: str, local_path: str) -> str:
-    """Download a single file. Returns the local path on success."""
+def download_file(url: str, local_path: str, retries: int = 5) -> str:
+    """Download a single file, retrying on transient errors.
+
+    Data goes to ``<local_path>.part`` and is renamed only once complete and
+    size-checked, so an interrupted download never leaves a truncated file at
+    ``local_path``. Retries resume from the partial file via HTTP Range.
+    """
     os.makedirs(os.path.dirname(local_path), exist_ok=True)
-    resp = requests.get(url, stream=True, timeout=(10, 60))
-    resp.raise_for_status()
-    with open(local_path, "wb") as f:
-        for chunk in resp.iter_content(chunk_size=1024 * 1024):
-            f.write(chunk)
-    return local_path
+    part_path = local_path + ".part"
+    last_err: Exception | None = None
+    for attempt in range(retries):
+        if attempt:
+            time.sleep(min(2**attempt, 30))
+        try:
+            offset = os.path.getsize(part_path) if os.path.exists(part_path) else 0
+            headers = {"Range": f"bytes={offset}-"} if offset else {}
+            with requests.get(url, stream=True, timeout=(10, 60), headers=headers) as resp:
+                if resp.status_code == 416:  # .part already holds the full file
+                    offset = 0
+                    resp.close()
+                    os.replace(part_path, local_path)
+                    return local_path
+                resp.raise_for_status()
+                if offset and resp.status_code != 206:
+                    offset = 0  # server ignored Range; restart from scratch
+                expected = int(resp.headers.get("Content-Length", -1))
+                with open(part_path, "ab" if offset else "wb") as f:
+                    for chunk in resp.iter_content(chunk_size=1024 * 1024):
+                        f.write(chunk)
+                if expected >= 0 and os.path.getsize(part_path) != offset + expected:
+                    raise IOError("size mismatch after download")
+            os.replace(part_path, local_path)
+            return local_path
+        except (requests.RequestException, OSError) as e:
+            last_err = e
+    raise RuntimeError(f"giving up after {retries} attempts: {last_err}")
 
 
 def download_mix(mix_file: str, data_dir: str, tokenizer_id: str, workers: int = 8) -> list[str]:
