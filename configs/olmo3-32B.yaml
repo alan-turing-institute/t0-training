@@ -1,0 +1,88 @@
+# Base config for OLMo3 32B training on Dolma 3 data.
+# All values here are defaults that can be overridden via CLI dotlist args.
+#
+# This is currently only used for a short (1h) smoke test of 32B pretraining
+# with olmo-core, see batch/32b/train_clean_test.sh. It reuses the 7B data
+# mix since a Chinchilla-optimal 32B mix (640B tok) has not been generated.
+#
+# Training hyperparameters (sequence_length, batch sizes, lr, warmup, betas,
+# weight_decay, seed, num_workers, z_loss_multiplier, max_grad_norm,
+# compile_model) are taken directly from the official AI2 recipe:
+# https://github.com/allenai/OLMo-core/blob/v2.6.0/src/scripts/official/OLMo3/OLMo-3-1025-32B-pretrain.py
+# The only deviation is dp_config: shard_degree=32 which gives 2 real 
+# replica groups, so this test actually exercises HSDP's
+# replication path.
+# Eval/logging/checkpoint knobs (wandb/comet enabled, save_overwrite,
+# save_async, eval task list, max_duration) follow this repo's existing
+# convention rather than the official script.
+
+# --- Model ---
+model_factory: olmo3_32B
+sequence_length: 8192
+
+# --- Data ---
+mix_file: data/mixes/dolma3-140B.txt
+data_dir: data/npy
+work_dir: data/dataset-cache
+
+# --- Data loader ---
+data_loader:
+  global_batch_size: 8388608  # 8 * 1024 * 1024 tokens
+  seed: 34521
+  num_workers: 8
+
+# --- Train module ---
+train_module:
+  rank_microbatch_size: 8192  # == sequence_length; 1 sequence/rank per microbatch
+  compile_model: true
+  max_grad_norm: 1.0
+  z_loss_multiplier: 1.0e-5
+  optim:
+    lr: 6.0e-4
+    weight_decay: 0.1
+    betas: [0.9, 0.95]
+  scheduler:
+    warmup_steps: 2000
+  dp_config:
+    name: hsdp
+    shard_degree: 32
+    param_dtype: bfloat16
+    reduce_dtype: float32
+  ac_config:
+    mode: budget
+    activation_memory_budget: 0.5
+
+# --- Trainer ---
+trainer:
+  save_overwrite: false
+  metrics_collect_interval: 50
+  cancel_check_interval: 10
+
+# --- Callbacks ---
+callbacks:
+  checkpointer:
+    save_interval: 1000
+    ephemeral_save_interval: 200
+    save_async: true
+  comet:
+    enabled: false
+    cancel_check_interval: 10
+  wandb:
+    enabled: true
+    cancel_check_interval: 10
+  profiler:
+    enabled: false
+  lm_evaluator:
+    eval_interval: 1000
+    eval_duration_steps: 50
+    mix_base_dir: data
+  downstream_evaluator:
+    tasks:
+      - hellaswag
+    eval_interval: 1000
+
+# --- Save ---
+save_folder: checkpoints
+
+# --- Misc ---
+init_seed: 12536

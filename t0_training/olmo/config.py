@@ -20,7 +20,10 @@ from olmo_core.data import (
 from olmo_core.data.numpy_dataset import NumpyDatasetConfig
 from olmo_core.distributed.parallel import DataParallelType
 from olmo_core.nn.rope import RoPEScalingConfig, YaRNRoPEScalingConfig
-from olmo_core.nn.transformer import TransformerConfig
+from olmo_core.nn.transformer import (
+    TransformerActivationCheckpointingMode,
+    TransformerConfig,
+)
 from olmo_core.optim import (
     CosWithWarmup,
     LinearWithWarmup,
@@ -39,6 +42,7 @@ from olmo_core.train.callbacks import (
     WandBCallback,
 )
 from olmo_core.train.train_module import (
+    TransformerActivationCheckpointingConfig,
     TransformerDataParallelConfig,
     TransformerTrainModuleConfig,
 )
@@ -227,6 +231,16 @@ def build_experiment_config(
     else:
         scheduler = CosWithWarmup(warmup=warmup, alpha_f=alpha_f)
 
+    ac_cfg = tm.get("ac_config")
+    ac_config = None
+    if ac_cfg is not None:
+        ac_config = TransformerActivationCheckpointingConfig(
+            mode=TransformerActivationCheckpointingMode(ac_cfg.get("mode", "full")),
+            block_interval=ac_cfg.get("block_interval"),
+            modules=ac_cfg.get("modules"),
+            activation_memory_budget=ac_cfg.get("activation_memory_budget"),
+        )
+
     train_module_config = TransformerTrainModuleConfig(
         rank_microbatch_size=tm.get("rank_microbatch_size", 16 * 1024),
         max_sequence_length=sequence_length,
@@ -245,7 +259,9 @@ def build_experiment_config(
             name=DataParallelType[dp_cfg.get("name", "fsdp")],
             param_dtype=DType[dp_cfg.get("param_dtype", "bfloat16")],
             reduce_dtype=DType[dp_cfg.get("reduce_dtype", "float32")],
+            shard_degree=dp_cfg.get("shard_degree"),
         ),
+        ac_config=ac_config,
         max_grad_norm=float(tm.get("max_grad_norm", 1.0)),
         z_loss_multiplier=float(tm.get("z_loss_multiplier", 1e-5)),
         scheduler=scheduler,
