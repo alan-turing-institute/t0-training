@@ -32,6 +32,10 @@ nvidia-cu130 = ["torch>=2.10.0", "flash-attn==2.7.4.post1"]  # DGX Spark
 # --- AMD / ROCm ---
 amd-rocm = ["torch[device-gfx950]==2.10.0+rocm7.14.0; platform_machine == 'x86_64'"]  # Zenith (AMD MI355x). No flash-attn: t0_training falls back to torch SDPA automatically.
 
+# Float8 training (train_module.float8_config); OLMo-core needs torchao for it.
+# Install with: uv sync --extra nvidia-cu126 --extra float8
+float8 = ["torchao"]
+
 filters = ["fasttext-predict", "huggingface_hub", "datasketch", "xxhash", "tiktoken"]
 
 # RULER long-context eval (lm-evaluation-harness)
