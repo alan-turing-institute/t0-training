@@ -18,7 +18,14 @@ from olmo_core.data import (
     TokenizerConfig,
 )
 from olmo_core.data.numpy_dataset import NumpyDatasetConfig
-from olmo_core.distributed.parallel import DataParallelType
+from olmo_core.distributed.parallel import (
+    DataParallelType,
+    PipelineP2PBackend,
+    PipelineScheduleType,
+)
+from olmo_core.float8 import Float8Config
+from olmo_core.nn.attention.ring import RingAttentionLoadBalancerType
+from olmo_core.nn.transformer import TransformerActivationCheckpointingMode
 from olmo_core.nn.rope import RoPEScalingConfig, YaRNRoPEScalingConfig
 from olmo_core.nn.transformer import TransformerConfig
 from olmo_core.optim import (
@@ -39,7 +46,11 @@ from olmo_core.train.callbacks import (
     WandBCallback,
 )
 from olmo_core.train.train_module import (
+    TransformerActivationCheckpointingConfig,
+    TransformerContextParallelConfig,
     TransformerDataParallelConfig,
+    TransformerPipelineParallelConfig,
+    TransformerTensorParallelConfig,
     TransformerTrainModuleConfig,
 )
 
@@ -107,6 +118,169 @@ class ExperimentConfig(Config):
     """Whether to load the trainer state when loading from `load_path`."""
 
 
+# --- Parallelism / memory settings (train_module.*_config) ------------------------------
+#
+# Each helper turns a YAML mapping into the matching OLMo-core config. A section that is
+# absent (or null) means "feature off" (None). Unknown keys raise, so a typo such as
+# `shard_degre` fails loudly instead of being silently ignored.
+
+_DP_KEYS = {"name", "param_dtype", "reduce_dtype", "num_replicas", "shard_degree", "wrapping_strategy"}
+_TP_KEYS = {"degree", "enable_async"}
+_PP_KEYS = {"degree", "schedule", "split_points", "use_custom_stage_implementation", "p2p_backend"}
+_CP_KEYS = {"degree", "style", "load_balancer", "head_stride"}
+_AC_KEYS = {"mode", "block_interval", "modules", "activation_memory_budget", "determinism_check"}
+_FLOAT8_KEYS = {"enabled", "recipe", "modules_to_ignore"}
+
+
+def _check_keys(section: str, cfg: dict, allowed: set) -> None:
+    if not isinstance(cfg, dict):
+        raise ValueError(f"train_module.{section} must be a mapping, got {type(cfg).__name__}")
+    unknown = sorted(set(cfg) - allowed)
+    if unknown:
+        raise ValueError(
+            f"Unknown key(s) in train_module.{section}: {unknown}. Allowed: {sorted(allowed)}"
+        )
+
+
+def _enum(enum_cls, value, section: str, field_name: str):
+    """Look up an enum member by value, falling back to name (e.g. 'zig_zag', '1F1B')."""
+    for lookup in (lambda v: enum_cls(v), lambda v: enum_cls[v]):
+        try:
+            return lookup(value)
+        except (ValueError, KeyError):
+            pass
+    valid = sorted({m.value for m in enum_cls} | {m.name for m in enum_cls})
+    raise ValueError(f"Invalid train_module.{section}.{field_name}: {value!r}. Valid: {valid}")
+
+
+def _degree(section: str, cfg: dict) -> int:
+    if "degree" not in cfg:
+        raise ValueError(f"train_module.{section}.degree is required")
+    degree = cfg["degree"]
+    if isinstance(degree, bool) or not isinstance(degree, int) or degree < 1:
+        raise ValueError(f"train_module.{section}.degree must be a positive integer, got {degree!r}")
+    return degree
+
+
+def _build_dp_config(cfg: dict) -> TransformerDataParallelConfig:
+    """Data parallelism: fsdp (default), hsdp (needs num_replicas and/or shard_degree), or ddp."""
+    _check_keys("dp_config", cfg, _DP_KEYS)
+    name = _enum(DataParallelType, cfg.get("name", "fsdp"), "dp_config", "name")
+    kwargs = {}
+    for key in ("num_replicas", "shard_degree"):
+        if cfg.get(key) is not None:
+            if name != DataParallelType.hsdp:
+                raise ValueError(f"train_module.dp_config.{key} is only valid with name: hsdp")
+            kwargs[key] = int(cfg[key])
+    if "wrapping_strategy" in cfg:
+        from olmo_core.nn.transformer import TransformerDataParallelWrappingStrategy
+
+        kwargs["wrapping_strategy"] = _enum(
+            TransformerDataParallelWrappingStrategy, cfg["wrapping_strategy"], "dp_config", "wrapping_strategy"
+        )
+    return TransformerDataParallelConfig(
+        name=name,
+        param_dtype=_enum(DType, cfg.get("param_dtype", "bfloat16"), "dp_config", "param_dtype"),
+        reduce_dtype=_enum(DType, cfg.get("reduce_dtype", "float32"), "dp_config", "reduce_dtype"),
+        **kwargs,
+    )
+
+
+def _build_tp_config(cfg: Optional[dict]) -> Optional[TransformerTensorParallelConfig]:
+    if cfg is None:
+        return None
+    _check_keys("tp_config", cfg, _TP_KEYS)
+    return TransformerTensorParallelConfig(
+        degree=_degree("tp_config", cfg), enable_async=bool(cfg.get("enable_async", False))
+    )
+
+
+def _build_pp_config(cfg: Optional[dict]) -> Optional[TransformerPipelineParallelConfig]:
+    if cfg is None:
+        return None
+    _check_keys("pp_config", cfg, _PP_KEYS)
+    kwargs = {}
+    if "schedule" in cfg:
+        kwargs["schedule"] = _enum(PipelineScheduleType, cfg["schedule"], "pp_config", "schedule")
+    if "p2p_backend" in cfg:
+        kwargs["p2p_backend"] = _enum(PipelineP2PBackend, cfg["p2p_backend"], "pp_config", "p2p_backend")
+    if cfg.get("split_points") is not None:
+        kwargs["split_points"] = [int(i) for i in cfg["split_points"]]
+    if "use_custom_stage_implementation" in cfg:
+        kwargs["use_custom_stage_implementation"] = bool(cfg["use_custom_stage_implementation"])
+    return TransformerPipelineParallelConfig(degree=_degree("pp_config", cfg), **kwargs)
+
+
+def _build_cp_config(cfg: Optional[dict]) -> Optional[TransformerContextParallelConfig]:
+    """Context parallelism: style ring (default; load_balancer zig_zag|llama3) or ulysses."""
+    if cfg is None:
+        return None
+    _check_keys("cp_config", cfg, _CP_KEYS)
+    degree = _degree("cp_config", cfg)
+    style = cfg.get("style", "ring")
+    if style == "ulysses":
+        if "load_balancer" in cfg or "head_stride" in cfg:
+            raise ValueError("train_module.cp_config: load_balancer/head_stride only apply to style: ring")
+        return TransformerContextParallelConfig.ulysses(degree)
+    if style != "ring":
+        raise ValueError(f"Invalid train_module.cp_config.style: {style!r}. Valid: ['ring', 'ulysses']")
+    balancer = _enum(
+        RingAttentionLoadBalancerType, cfg.get("load_balancer", "zig_zag"), "cp_config", "load_balancer"
+    )
+    if balancer not in (RingAttentionLoadBalancerType.zig_zag, RingAttentionLoadBalancerType.llama3):
+        raise ValueError(f"train_module.cp_config.load_balancer {balancer.value!r} is not valid for style: ring")
+    head_stride = int(cfg.get("head_stride", 1))
+    if balancer == RingAttentionLoadBalancerType.llama3:
+        return TransformerContextParallelConfig.llama3(degree, head_stride=head_stride)
+    return TransformerContextParallelConfig.zig_zag(degree, head_stride=head_stride)
+
+
+def _build_ac_config(cfg: Optional[dict]) -> Optional[TransformerActivationCheckpointingConfig]:
+    """Activation checkpointing. OLMo-core validates the mode-specific required fields."""
+    if cfg is None:
+        return None
+    _check_keys("ac_config", cfg, _AC_KEYS)
+    kwargs = {}
+    if "mode" in cfg:
+        kwargs["mode"] = _enum(TransformerActivationCheckpointingMode, cfg["mode"], "ac_config", "mode")
+    for key in ("block_interval", "modules", "activation_memory_budget", "determinism_check"):
+        if cfg.get(key) is not None:
+            kwargs[key] = cfg[key]
+    return TransformerActivationCheckpointingConfig(**kwargs)
+
+
+def _build_float8_config(cfg: Optional[dict]) -> Optional[Float8Config]:
+    """Float8 training via a torchao recipe name (tensorwise, rowwise, rowwise_with_gw_hp)."""
+    if cfg is None:
+        return None
+    _check_keys("float8_config", cfg, _FLOAT8_KEYS)
+    from olmo_core.float8 import AOFloat8LinearRecipe
+
+    kwargs = {}
+    if cfg.get("recipe") is not None:
+        kwargs["ao_recipe"] = _enum(AOFloat8LinearRecipe, cfg["recipe"], "float8_config", "recipe")
+    if cfg.get("modules_to_ignore") is not None:
+        kwargs["modules_to_ignore"] = list(cfg["modules_to_ignore"])
+    return Float8Config(enabled=bool(cfg.get("enabled", True)), **kwargs)
+
+
+_PARALLELISM_SECTIONS = ("tp_config", "pp_config", "cp_config", "ac_config", "float8_config")
+
+
+def _ensure_parallelism_section(raw: dict, key: str) -> None:
+    """Create `train_module.<section>` before a dotted override targets it.
+
+    OLMo-core's override helper raises KeyError for sections missing from the YAML, which
+    would make e.g. `train_module.tp_config.degree=2` impossible when the YAML has no
+    tp_config. Only these optional sections are auto-created; other typos still fail.
+    """
+    parts = key.split(".")
+    if len(parts) > 2 and parts[0] == "train_module" and parts[1] in _PARALLELISM_SECTIONS:
+        tm = raw.setdefault("train_module", {})
+        if tm.get(parts[1]) is None:
+            tm[parts[1]] = {}
+
+
 def build_experiment_config(
     config_path: str,
     run_name: str,
@@ -129,6 +303,7 @@ def build_experiment_config(
     if overrides:
         from olmo_core.config import _clean_opts, _set_nested
         for key, value in _clean_opts(overrides):
+            _ensure_parallelism_section(raw, key)
             _set_nested(raw, key, value)
 
     # --- Extract fields we handle in Python (not part of ExperimentConfig) ---
@@ -241,11 +416,12 @@ def build_experiment_config(
             ],
         ),
         compile_model=tm.get("compile_model", True),
-        dp_config=TransformerDataParallelConfig(
-            name=DataParallelType[dp_cfg.get("name", "fsdp")],
-            param_dtype=DType[dp_cfg.get("param_dtype", "bfloat16")],
-            reduce_dtype=DType[dp_cfg.get("reduce_dtype", "float32")],
-        ),
+        dp_config=_build_dp_config(dp_cfg),
+        tp_config=_build_tp_config(tm.get("tp_config")),
+        pp_config=_build_pp_config(tm.get("pp_config")),
+        cp_config=_build_cp_config(tm.get("cp_config")),
+        ac_config=_build_ac_config(tm.get("ac_config")),
+        float8_config=_build_float8_config(tm.get("float8_config")),
         max_grad_norm=float(tm.get("max_grad_norm", 1.0)),
         z_loss_multiplier=float(tm.get("z_loss_multiplier", 1e-5)),
         scheduler=scheduler,

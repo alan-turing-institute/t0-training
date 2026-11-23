@@ -52,6 +52,29 @@ Checkpoints are saved to `save_folder` (default is whatever is set in the config
 - **Resumption**: if the trainer finds an existing checkpoint in `save_folder` on startup, it automatically resumes from it (model weights, optimizer state, data loader position, and step counter)
 - **`save_overwrite`** is `false` by default — the trainer will error if you re-launch with the same `save_folder` that already contains checkpoints from a different run. Set to `true` for iterative debugging
 
+### Parallelism and memory options
+
+Under `train_module` in the YAML you can enable the following OLMo-core features. Each is off unless its section is present, and unknown keys raise an error.
+
+```yaml
+train_module:
+  dp_config:                 # default: fsdp
+    name: hsdp               # fsdp | hsdp | ddp
+    num_replicas: 2          # hsdp only
+    shard_degree: 8          # hsdp only
+  tp_config: {degree: 2}                         # tensor parallel (enable_async: true is experimental)
+  pp_config: {degree: 2, schedule: 1F1B}         # pipeline parallel (+ split_points, use_custom_stage_implementation, p2p_backend)
+  cp_config: {degree: 2, style: ring, load_balancer: zig_zag}   # context parallel; style: ulysses is also available
+  ac_config: {mode: full}                        # activation checkpointing; selected_blocks needs block_interval
+  float8_config: {recipe: rowwise}               # tensorwise | rowwise | rowwise_with_gw_hp
+```
+
+Ready-made 7B variants, each enabling one option on top of `configs/olmo3-7B.yaml` (sized for 16 GPUs = 4 nodes x 4 GPUs): `olmo3-7B-hsdp.yaml`, `-tp`, `-pp`, `-cp`, `-ac` and `-float8`. Point the batch script's config path at one of them.
+
+They can also be switched on from the command line, e.g. `train_module.tp_config.degree=2 train_module.ac_config.mode=full`. The degrees must fit the model and the GPU count (for the 7B model, TP must divide its 32 heads); OLMo-core checks the combination when the train module is built.
+
+The OLMo-core version is pinned in `pyproject.toml` (`rev = ...`) because these options depend on its train-module API. Change the `rev` deliberately when updating.
+
 ### Evaluation and logging
 
 Eval data is downloaded and cached in `work_dir` on first run. **If you get an error, you may need to pre-download the evaluation data and update the config file to point to that data path**.

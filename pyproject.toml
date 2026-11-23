@@ -85,7 +85,10 @@ conflicts = [
 ]
 
 [tool.uv.sources]
-ai2-olmo-core = { git = "https://github.com/allenai/OLMo-core.git" }
+# Pinned so training runs are reproducible; the parallelism settings in
+# t0_training/olmo/config.py depend on this version's train-module API.
+# To update: change `rev` and re-run `uv sync`.
+ai2-olmo-core = { git = "https://github.com/allenai/OLMo-core.git", rev = "704625ad94a7c8bc93f9bea7a0b865b9a0c3d44e" }
 torch = [
     { index = "pytorch-cpu", extra = "cpu" },
     { index = "pytorch-cu126", extra = "nvidia-cu126" },
