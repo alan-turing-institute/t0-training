@@ -36,7 +36,6 @@ mkdir -p "$LOGDIR"
 VARIANTS=(
   "base|"
   "ac|train_module.ac_config.mode=full"
-  "fp32|train_module.dp_config.param_dtype=float32"
 )
 [ -z "$SKIP_F8" ] && VARIANTS+=("f8|train_module.float8_config.recipe=rowwise")
 

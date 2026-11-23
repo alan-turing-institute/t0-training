@@ -10,8 +10,8 @@
 # Short 7B runs for comparing parallelism / memory settings (one config per variant).
 #
 # Usage (the run label must be unique per experiment, it names the checkpoint folder):
-#   CONFIG=configs/olmo3-7B-tp.yaml STEPS=200 ./batch/submit.sh exp-tp batch/7b/train_experiment.sh
-#   CONFIG=configs/olmo3-7B.yaml    STEPS=200 ./batch/submit.sh exp-base batch/7b/train_experiment.sh
+#   CONFIG=configs/olmo3-7B-tp.yaml STEPS=200 ./batch/submit.sh exp-tp batch/7b/scaling/train_experiment.sh
+#   CONFIG=configs/olmo3-7B.yaml    STEPS=200 ./batch/submit.sh exp-base batch/7b/scaling/train_experiment.sh
 #   (extra sbatch args go last, e.g. --time=00:30:00)
 #
 # Variables (all optional except CONFIG):
@@ -74,3 +74,8 @@ srun bash -c "mkdir -p \$TRITON_CACHE_DIR && uv run --no-sync torchrun \
     callbacks.lm_evaluator.eval_interval=1000000 \
     callbacks.downstream_evaluator.eval_interval=1000000 \
     $EXTRA"
+STATUS=$?
+
+# Remove the RAM-backed Triton cache on every node (do not rely on automatic cleanup).
+srun bash -c "rm -rf \$TRITON_CACHE_DIR" || true
+exit $STATUS
