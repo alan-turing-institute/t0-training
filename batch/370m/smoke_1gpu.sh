@@ -13,6 +13,7 @@
 # Usage:
 #   ./batch/submit.sh smoke batch/370m/smoke_1gpu.sh
 #   STEPS=40 ./batch/submit.sh smoke batch/370m/smoke_1gpu.sh
+#   MIX=data/mixes/dolma3-140B.txt ./batch/submit.sh smoke batch/370m/smoke_1gpu.sh   # different mix
 #   SKIP_F8=1 ./batch/submit.sh smoke batch/370m/smoke_1gpu.sh   # GPU without float8 support
 #
 # A failing variant does not stop the others; the summary lists which ones failed.
@@ -20,6 +21,8 @@
 STEPS=${STEPS:-20}
 RUN=${RUN:-smoke}
 CONFIG=configs/olmo3-370M.yaml
+# The config defaults to the 7.4B mix; use one that exists locally (only ~5M tokens are consumed).
+MIX=${MIX:-data/mixes/dolma3-60B.txt}
 
 module load cuda/12.6
 module load gcc-native/12.3
@@ -48,6 +51,7 @@ for v in "${VARIANTS[@]}"; do
     -m t0_training.olmo $CONFIG \
     --run-name smoke-$NAME \
     save_folder=/tmp/smoke-${SLURM_JOB_ID}-$NAME \
+    mix_file=$MIX \
     trainer.max_duration=${STEPS}steps \
     callbacks.wandb.enabled=false \
     callbacks.checkpointer.save_interval=1000000 \
