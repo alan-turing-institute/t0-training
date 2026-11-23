@@ -282,6 +282,7 @@ class TestParallelismConfig:
 
         tm = _build(
             tmp_path,
+            {"dp_config": {"name": "fsdp", "param_dtype": "bfloat16"}},
             overrides=["train_module.dp_config.param_dtype=float32"],
         )
         assert tm.dp_config.param_dtype == DType.float32
