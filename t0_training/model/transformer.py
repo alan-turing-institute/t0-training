@@ -4,7 +4,7 @@ import torch.nn as nn
 from .block import TransformerBlock
 from .config import TransformerConfig
 from .norm import RMSNorm
-from .rope import precompute_freqs
+from .rope import precompute_freqs, precompute_freqs_yarn
 
 # https://github.com/allenai/OLMo-core/blob/main/src/olmo_core/nn/transformer/model.py
 
@@ -24,7 +24,15 @@ class Transformer(nn.Module):
         self.lm_head = nn.Linear(config.d_model, config.vocab_size, bias=False)
 
         # Precompute RoPE tables once; registered as buffers so they move with the model
-        cos, sin = precompute_freqs(config.d_model // config.n_heads, config.max_seq_len, config.rope_theta)
+        d_head = config.d_model // config.n_heads
+        if config.uses_yarn_rope:
+            cos, sin = precompute_freqs_yarn(
+                d_head, config.max_seq_len, config.rope_theta,
+                config.rope_scaling_factor, config.rope_beta_fast, config.rope_beta_slow,
+                config.rope_original_max_position_embeddings, config.rope_attention_factor,
+            )
+        else:
+            cos, sin = precompute_freqs(d_head, config.max_seq_len, config.rope_theta)
         self.register_buffer("cos", cos, persistent=False)
         self.register_buffer("sin", sin, persistent=False)
 

@@ -11,7 +11,7 @@ import torch.nn as nn
 from t0_training.model.config import TransformerConfig
 from t0_training.model.ffn import FFN
 from t0_training.model.norm import RMSNorm
-from t0_training.model.rope import apply_rotary, precompute_freqs
+from t0_training.model.rope import apply_rotary, precompute_freqs, precompute_freqs_yarn
 
 requires_gpu = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
 
@@ -126,6 +126,80 @@ def test_precompute_freqs_matches_olmo_core():
     assert torch.allclose(our_sin, olmo_sin.float(), atol=1e-5), (
         f"sin max diff: {(our_sin - olmo_sin.float()).abs().max().item()}"
     )
+
+
+def test_precompute_freqs_yarn_matches_olmo_core():
+    """YaRN frequency tables should match olmo_core's RotaryEmbedding with
+    YaRNRoPEScalingConfig -- same config as Olmo-3-7B-Think-SFT's real HF
+    rope_scaling (see planning/write_dpo_code.md Phase 1 validation).
+
+    Isolates the RoPE math from any weight-loading error in the (separate)
+    checkpoint-import step: if this passes, a later logit-parity mismatch is
+    unambiguously not a RoPE bug.
+    """
+    import math
+
+    from olmo_core.nn.rope import RotaryEmbedding, YaRNRoPEScalingConfig
+
+    d_head = 16
+    seq_len = 32
+    theta = 500_000
+    factor, beta_fast, beta_slow = 8.0, 32, 1
+    original_max_position_embeddings = 8192
+    attention_factor = 0.1 * math.log(factor) + 1.0  # == 1.2079441541679836
+
+    our_cos, our_sin = precompute_freqs_yarn(
+        d_head, seq_len, float(theta),
+        factor, beta_fast, beta_slow,
+        original_max_position_embeddings, attention_factor,
+    )
+
+    olmo_rope = RotaryEmbedding(
+        head_size=d_head, theta=theta, full_precision=True,
+        scaling=YaRNRoPEScalingConfig(
+            factor=factor, beta_fast=beta_fast, beta_slow=beta_slow,
+            old_context_len=original_max_position_embeddings,
+        ),
+    )
+    olmo_sin, olmo_cos = olmo_rope._get_rotary_embedding(seq_len, torch.device("cpu"))
+
+    assert torch.allclose(our_cos, olmo_cos.float(), atol=1e-5), (
+        f"cos max diff: {(our_cos - olmo_cos.float()).abs().max().item()}"
+    )
+    assert torch.allclose(our_sin, olmo_sin.float(), atol=1e-5), (
+        f"sin max diff: {(our_sin - olmo_sin.float()).abs().max().item()}"
+    )
+
+
+def test_precompute_freqs_yarn_disabled_by_default():
+    """TransformerConfig without YaRN fields set must use plain RoPE (config_3b/
+    config_7b unaffected by adding YaRN as an opt-in second code path)."""
+    assert not _CFG.uses_yarn_rope
+
+
+def test_transformer_config_yarn_fields_must_be_set_together():
+    import dataclasses
+
+    partial = dataclasses.replace(_CFG, rope_scaling_factor=8.0)
+    with pytest.raises(ValueError, match="must be set together"):
+        partial.uses_yarn_rope
+
+
+def test_config_7b_yarn_matches_real_checkpoint():
+    """config_7b_yarn must carry Olmo-3-7B-Think-SFT's real HF rope_scaling
+    values exactly (see planning/write_dpo_code.md's compatibility-check table)."""
+    from t0_training.model.config import config_7b, config_7b_yarn
+
+    assert config_7b_yarn.uses_yarn_rope
+    assert config_7b_yarn.rope_scaling_factor == 8.0
+    assert config_7b_yarn.rope_beta_fast == 32.0
+    assert config_7b_yarn.rope_beta_slow == 1.0
+    assert config_7b_yarn.rope_original_max_position_embeddings == 8192
+    assert config_7b_yarn.rope_attention_factor == 1.2079441541679836
+    # Everything else should be untouched from config_7b.
+    assert config_7b_yarn.d_model == config_7b.d_model
+    assert config_7b_yarn.n_heads == config_7b.n_heads
+    assert not config_7b.uses_yarn_rope
 
 
 def test_apply_rotary_shape():
