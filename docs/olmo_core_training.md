@@ -54,7 +54,15 @@ Checkpoints are saved to `save_folder` (default is whatever is set in the config
 
 ### Evaluation and logging
 
-Eval data is downloaded and cached in `work_dir` on first run. **If you get an error, you may need to pre-download the evaluation data and update the config file to point to that data path**.
+Eval data is downloaded from `https://olmo-data.org` (the default `callbacks.lm_evaluator.mix_base_dir`) and cached in `work_dir` on first run. On nodes without internet access, pre-download the LM-evaluator shards (11 files, ~27 MB) and point the config at them:
+
+```bash
+uv run --no-sync t0-download --eval-data --data-dir data
+# then set in the config (or as a CLI override):
+#   callbacks.lm_evaluator.mix_base_dir: data
+```
+
+The downstream evaluator (HellaSwag) has its own data and is not covered by `--eval-data`.
 
 Two evaluators run every 250 steps by default:
 - **LM evaluator** — perplexity on `v3_small_ppl_validation` 
