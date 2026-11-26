@@ -4,6 +4,8 @@ Where possible, numerical outputs are validated against the equivalent
 olmo-core reference implementation using matching weights.
 """
 
+import dataclasses
+
 import pytest
 import torch
 import torch.nn as nn
@@ -423,6 +425,66 @@ def test_attention_gqa_config():
     x = torch.randn(2, 8, cfg.d_model, dtype=torch.bfloat16, device="cuda")
     out = attn(x, cos, sin)
     assert out.shape == x.shape
+
+
+def _attention_weights_on_keys(window_size, q_pos, keys):
+    """Runs the real Attention module so that attention is uniform over the
+    keys it lets query `q_pos` see, and returns the weight it puts on each of
+    `keys` (one key per channel, so at most d_head keys).
+
+    wq = wk = 0 makes q = k = 0 (also after qk-norm and RoPE), so all scores are
+    equal. wv routes input channel i to value channel i of each KV head, x has a 1
+    in channel i at position keys[i], and wo is the identity, so output channel i
+    at q_pos is exactly the attention weight on keys[i].
+    """
+    from t0_training.model.attention import Attention
+
+    cfg = dataclasses.replace(_CFG, max_seq_len=q_pos + 1)
+    attn = Attention(cfg, window_size=window_size)
+    d_head = cfg.d_model // cfg.n_heads
+    with torch.no_grad():
+        attn.wq.weight.zero_()
+        attn.wk.weight.zero_()
+        attn.wv.weight.zero_()
+        for i in range(len(keys)):
+            attn.wv.weight[i, i] = 1.0  # KV head 0, channel i <- input channel i
+        attn.wo.weight.copy_(torch.eye(cfg.d_model))
+    attn = attn.cuda().to(torch.bfloat16)
+
+    x = torch.zeros(1, q_pos + 1, cfg.d_model)
+    for i, key in enumerate(keys):
+        x[0, key, i] = 1.0
+    cos, sin = precompute_freqs(d_head, cfg.max_seq_len, cfg.rope_theta)
+    with torch.no_grad():
+        out = attn(x.cuda().to(torch.bfloat16), cos.cuda(), sin.cuda())
+    return [out[0, q_pos, i].item() for i in range(len(keys))]  # query head 0 uses KV head 0
+
+
+@requires_gpu
+@pytest.mark.parametrize("offset", [0, 1, 5])
+def test_attention_sliding_window_boundary_matches_hf(offset):
+    """A window of w keeps exactly the w most recent keys, including the query
+    itself, matching HF's sliding-window mask (`kv_idx > q_idx - sliding_window`,
+    transformers.masking_utils.sliding_window_overlay).
+
+    Being off by one here changes 1 key out of 4096 for OLMo3-7B, which is
+    invisible in bf16 logit-parity checks, so it is tested directly.
+    """
+    w = 8
+    q_pos = w + offset
+    excluded, first_included, newest = _attention_weights_on_keys(w, q_pos, [q_pos - w, q_pos - w + 1, q_pos])
+    assert excluded == 0.0
+    assert first_included == pytest.approx(1 / w, rel=1e-2)
+    assert newest == pytest.approx(1 / w, rel=1e-2)
+
+
+@requires_gpu
+def test_attention_full_attention_sees_all_keys():
+    """window_size=None is plain causal attention over every earlier key, so the
+    same setup puts weight 1/(q_pos + 1) on the oldest key."""
+    q_pos = 12
+    (oldest,) = _attention_weights_on_keys(None, q_pos, [0])
+    assert oldest == pytest.approx(1 / (q_pos + 1), rel=1e-2)
 
 
 @requires_gpu

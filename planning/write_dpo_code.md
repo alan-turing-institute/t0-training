@@ -147,14 +147,51 @@ classes, not this repo's `t0_training/model/` classes).
 
 ### Phase 2 validation — logit parity
 
-Mirror `scripts/export_hf.py`'s own validation pattern (it already does
-this check in the other direction): tokenize an identical short prompt, run
-it through both the HF model and the freshly-loaded internal model,
-`torch.testing.assert_close(hf_logits, internal_logits, atol=1e-4,
-rtol=1e-4)` (loosen if bf16 kernel rounding differences make that too
-tight). This is the single most important check in this whole plan — if it
-passes, Phases 1–2 are correct and everything downstream is training on the
-right model.
+Run identical inputs through both the HF model and the freshly-loaded
+internal model and check they agree. This is the single most important
+check in this whole plan — if it passes, Phases 1–2 are correct and
+everything downstream is training on the right model.
+
+#### What `--validate` checks
+
+The `validate_logit_parity` function checks:
+
+1. **Short prompt + 10k-token prompt** (the repo's own `docs/*.md`). A
+   ~6-token prompt never hits the 4096 sliding window or goes past YaRN's
+   original 8192 context, so it can't catch errors in either. The long
+   input is reported over all positions, `>4096`, and `>8192`. The internal
+   model's `max_seq_len` is raised for this run only (it only sizes the
+   non-persistent RoPE tables, so the weights don't change).
+2. **Pass criteria: top-1 (argmax) agreement ≥ 97% and mean per-position
+   KL(HF ‖ internal) ≤ 5e-3**, not an elementwise `assert_close`. In bf16,
+   max abs logit diffs are dominated by a few outlier positions: even
+   HF bf16 vs HF fp32 has a max abs diff of ~6.7 on long inputs. So any
+   `atol` is either too tight to pass a correct model or too loose to
+   mean anything. (`--atol 0.5 --rtol 0.05` passes on the short prompt
+   only.)
+3. **Greedy generation** (40 tokens, chat-templated prompt) compared
+   token-for-token. Reported, not asserted, because a single bf16 near-tie
+   can legitimately flip one token.
+4. **Sliding-window boundary: unit test, not part of `--validate`.** A
+   window off by one changes 1 key out of 4096 and is indistinguishable
+   from bf16 noise at the logit level (confirmed: see negative control B
+   below), so it is tested directly in `tests/test_model.py`
+   (`test_attention_sliding_window_boundary_matches_hf`). That test runs the
+   real `Attention` module with `wq = wk = 0` (uniform attention), routes
+   marker values on keys `q-w` and `q-w+1` through `wv`/`wo`, and asserts
+   the first gets zero weight and the second gets `1/w`, matching HF's
+   `kv_idx > q_idx - sliding_window` mask. It lives in the tests rather than
+   the script because it checks `Attention`'s code, not the imported
+   checkpoint, and needs only a GPU (milliseconds, no download). Changing
+   `attention.py`'s window tuple to `(w, 0)` or `(w-2, 0)` makes it fail.
+
+#### Open caveats
+
+- `config_7b_yarn.max_seq_len` is still 4096 (TODO in `config.py`). If DPO
+  sequences can exceed 4096, raise it. Validation already covers up to
+  10k positions.
+- Only batch size 1 without padding has been validated. Padded or packed
+  batches are Phase 6's concern (see Phase 6 validation).
 
 ---
 
