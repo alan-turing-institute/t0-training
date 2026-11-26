@@ -34,7 +34,11 @@ LENGTHS = [4096, 8192]
 
 
 def load_results(results_dir: Path, name: str) -> dict:
-    matches = sorted((results_dir / name).glob("*/results_*.json"))
+    # Sort by filename (the embedded timestamp), not full path -- some checkpoints have
+    # results under both an old "rwood-97__..." (HF Hub) dir and a newer "hf_export__..."
+    # (local) dir, and sorting full paths would pick "rwood-97__..." purely because 'r' > 'h',
+    # regardless of which file is actually newer.
+    matches = sorted((results_dir / name).glob("*/results_*.json"), key=lambda p: p.name)
     if not matches:
         raise FileNotFoundError(f"No results_*.json found under {results_dir / name}")
     with open(matches[-1]) as f:
