@@ -6,12 +6,12 @@ import torch
 
 def precompute_freqs(d_head: int, max_seq_len: int, theta: float = 500_000.0):
     # Inverse frequencies, one per pair: shape (d_head // 2,)
-    i = torch.arange(0, d_head, 2, dtype=torch.float32)
-    inv_freq = 1.0 / (theta ** (i / d_head))
+    i = torch.arange(0, d_head, 2, dtype=torch.float32) # 0, 2, 4, .., d_head-2
+    inv_freq = 1.0 / (theta ** (i / d_head)) # radians per token
 
     # Outer product with positions: shape (max_seq_len, d_head // 2)
     positions = torch.arange(max_seq_len, dtype=torch.float32)
-    freqs = torch.outer(positions, inv_freq)
+    freqs = torch.outer(positions, inv_freq) # raidians
 
     # Duplicate so shape is (max_seq_len, d_head) — matches x directly
     freqs = torch.cat([freqs, freqs], dim=-1)
@@ -28,14 +28,15 @@ def _yarn_find_correction_dim(
 ) -> float:
     """Finds the dimension at which the frequency correction should be applied for YaRN scaling."""
     # Wavelength needed to complete `num_rotations` rotations during the original training
-    wavelength = original_max_position_embeddings / num_rotations
+    wavelength = original_max_position_embeddings / num_rotations # tokens per 1 full rotation = tokens per 2*pi radians
 
     # Need to find pair index j for this wavelength:
     # inv_freq = 1.0 / (theta ** (i / d_head)) 
     # wavelength = 2*pi / inv_freq = 2*pi * theta**(i/d_head)
     # Rearrange to get i = d_head * log(wavelength / (2*pi)) / log(theta)
+    i = d_head * math.log(wavelength / (2 * math.pi)) / math.log(theta)
     # j = i/2 (i is the dimension index, j is the pair index)
-    return d_head * math.log(wavelength / (2 * math.pi)) / (2 * math.log(theta))
+    return i / 2
 
 
 def _yarn_find_correction_range(
