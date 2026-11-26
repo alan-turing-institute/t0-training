@@ -14,6 +14,10 @@
 
 RUN=${RUN:-run1}
 
+# Reduces allocator fragmentation to help avoid OOM on the 7B model (#29).
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+
+
 module load cuda/12.6
 module load gcc-native/12.3
 module load brics/nccl/2.26.6-1
@@ -29,8 +33,8 @@ export FI_CXI_RX_MATCH_MODE="hybrid"
 export NCCL_NET_FORCE_FLUSH="0"
 export NCCL_CROSS_NIC="1"
 
-export NCCL_DEBUG=WARN
-export NCCL_DEBUG_FILE=logs/${RUN}/nccl-%h.%p.log
+# verbose NCCL logging straight to stderr
+export NCCL_DEBUG=INFO
 
 MASTER_HOST=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
 MASTER_ADDR=$(srun --nodes=1 --ntasks=1 -w $MASTER_HOST hostname -i | tr -d ' ')
