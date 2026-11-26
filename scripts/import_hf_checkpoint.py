@@ -140,8 +140,11 @@ def validate_logit_parity(hf_id: str, imported_path: str, atol: float = 1e-4, rt
     del hf_model
     torch.cuda.empty_cache()
 
-    model = Transformer(config_7b_yarn).cuda().to(torch.bfloat16)
-    model.load_state_dict(torch.load(imported_path, map_location="cuda"))
+    # Deliberately NOT model.to(torch.bfloat16)
+    # Instead, build the model normally then assign=True binds the checkpoint's already-bf16 parameter tensors
+    # directly as the live parameters without ever touching the buffers.
+    model = Transformer(config_7b_yarn).cuda()
+    model.load_state_dict(torch.load(imported_path, map_location="cuda"), strict=True, assign=True)
     model.eval()
     with torch.no_grad():
         internal_logits = model(prompt_ids)
