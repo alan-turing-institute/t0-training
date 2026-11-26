@@ -26,15 +26,21 @@ class Transformer(nn.Module):
         # Precompute RoPE tables once; registered as buffers so they move with the model
         d_head = config.d_model // config.n_heads
         if config.uses_yarn_rope:
-            cos, sin = precompute_freqs_yarn(
+            # Only use YaRN scaling for full-attention layers
+            cos_full, sin_full = precompute_freqs_yarn(
                 d_head, config.max_seq_len, config.rope_theta,
                 config.rope_scaling_factor, config.rope_beta_fast, config.rope_beta_slow,
                 config.rope_original_max_position_embeddings, config.rope_attention_factor,
             )
+            # Use normal RoPE for sliding-window attention layers
+            cos_sliding, sin_sliding = precompute_freqs(d_head, config.max_seq_len, config.rope_theta)
         else:
-            cos, sin = precompute_freqs(d_head, config.max_seq_len, config.rope_theta)
-        self.register_buffer("cos", cos, persistent=False)
-        self.register_buffer("sin", sin, persistent=False)
+            cos_full, sin_full = precompute_freqs(d_head, config.max_seq_len, config.rope_theta)
+            cos_sliding, sin_sliding = cos_full, sin_full
+        self.register_buffer("cos_full", cos_full, persistent=False)
+        self.register_buffer("sin_full", sin_full, persistent=False)
+        self.register_buffer("cos_sliding", cos_sliding, persistent=False)
+        self.register_buffer("sin_sliding", sin_sliding, persistent=False)
 
         self.init_weights()
 
@@ -55,8 +61,13 @@ class Transformer(nn.Module):
         # tokens: (B, T) integer token IDs
         x = self.embedding(tokens)              # (B, T, d_model)
 
-        for block in self.blocks:
-            x = block(x, self.cos, self.sin)    # (B, T, d_model)
+        # Selected RoPE vs YaRN scaled cos/sin per layer in forward() via config.window_size_for_layer()
+        for layer_idx, block in enumerate(self.blocks):
+            if self.config.window_size_for_layer(layer_idx) is None:
+                cos, sin = self.cos_full, self.sin_full
+            else:
+                cos, sin = self.cos_sliding, self.sin_sliding
+            x = block(x, cos, sin)              # (B, T, d_model)
 
         x = self.norm(x)                        # final norm before LM head
         return self.lm_head(x)                  # now upsize to (B, T, vocab_size)

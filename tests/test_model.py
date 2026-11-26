@@ -202,6 +202,48 @@ def test_config_7b_yarn_matches_real_checkpoint():
     assert not config_7b.uses_yarn_rope
 
 
+def test_transformer_applies_yarn_only_to_full_attention_layers():
+    """The real checkpoint's rope_scaling only applies to full-attention
+    layers -- sliding-window layers keep plain, unscaled RoPE (confirmed in
+    transformers' Olmo3Config.convert_rope_params_to_dict: rope_scaling only
+    updates rope_parameters["full_attention"], leaving "sliding_attention" at
+    plain rope_type="default"). Applying YaRN uniformly to every layer was a
+    real bug caught by the GPU logit-parity check -- this pins the fix."""
+    import dataclasses
+
+    from t0_training.model.transformer import Transformer
+
+    cfg = dataclasses.replace(
+        _CFG,
+        sliding_window_pattern=(4, -1),  # layer 0 sliding, layer 1 full
+        force_full_attention_on_first_layer=False,
+        force_full_attention_on_last_layer=False,
+        rope_scaling_factor=8.0,
+        rope_beta_fast=32.0,
+        rope_beta_slow=1.0,
+        rope_original_max_position_embeddings=8192,
+        rope_attention_factor=1.2079441541679836,
+    )
+    assert cfg.window_size_for_layer(0) == 4       # sliding
+    assert cfg.window_size_for_layer(1) is None    # full attention
+
+    model = Transformer(cfg)
+
+    expected_sliding_cos, expected_sliding_sin = precompute_freqs(_D_HEAD, cfg.max_seq_len, cfg.rope_theta)
+    expected_full_cos, expected_full_sin = precompute_freqs_yarn(
+        _D_HEAD, cfg.max_seq_len, cfg.rope_theta,
+        cfg.rope_scaling_factor, cfg.rope_beta_fast, cfg.rope_beta_slow,
+        cfg.rope_original_max_position_embeddings, cfg.rope_attention_factor,
+    )
+    assert torch.equal(model.cos_sliding, expected_sliding_cos)
+    assert torch.equal(model.sin_sliding, expected_sliding_sin)
+    assert torch.equal(model.cos_full, expected_full_cos)
+    assert torch.equal(model.sin_full, expected_full_sin)
+    # Sanity: the two tables must actually differ, or this test can't catch
+    # the uniform-YaRN-everywhere regression.
+    assert not torch.equal(model.cos_sliding, model.cos_full)
+
+
 def test_apply_rotary_shape():
     cos, sin = precompute_freqs(_D_HEAD, _CFG.max_seq_len, _CFG.rope_theta)
     x = torch.randn(2, 8, _CFG.n_heads, _D_HEAD)
@@ -739,8 +781,10 @@ def test_transformer_rope_buffers_not_saved_in_state_dict():
 
     model = Transformer(_CFG).cuda().to(torch.bfloat16)
     keys = set(model.state_dict().keys())
-    assert "cos" not in keys
-    assert "sin" not in keys
+    assert "cos_full" not in keys
+    assert "sin_full" not in keys
+    assert "cos_sliding" not in keys
+    assert "sin_sliding" not in keys
 
 
 @requires_gpu
