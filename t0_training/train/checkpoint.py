@@ -32,6 +32,23 @@ def restore_rng_state(state: dict[str, Any]) -> None:
         torch.cuda.set_rng_state(state["cuda"])
 
 
+def load_seed_checkpoint(model: torch.nn.Module, path: str | Path) -> None:
+    """Loads a flat (unsharded) state dict, e.g. scripts/import_hf_checkpoint.py's
+    output, into a freshly built model to start a new run from.
+
+    Must be called before compile_model() and before wrap_model_fsdp(). 
+    Deliberately not `assign=True` since wrap_model_fsdp requires fp32. 
+    mmap=True lets ranks on a node share one page-cached copy of the file.
+    """
+    # compile_model() (torch.compile) adds _orig_mod to the state dict keys;
+    # raise if the model has already been compiled
+    if any("_orig_mod" in key for key in model.state_dict()):
+        raise ValueError("load_seed_checkpoint must be called before compile_model().")
+    
+    state_dict = torch.load(path, mmap=True, map_location="cpu", weights_only=True)
+    model.load_state_dict(state_dict, strict=True)
+
+
 class CheckpointManager:
     """Saves/restores sharded model + optimizer state via torch.distributed.checkpoint,
     plus an arbitrary caller-supplied "trainer state" dict (step, RNG, data loader

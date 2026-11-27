@@ -4,6 +4,8 @@ Where possible, numerical outputs are validated against the equivalent
 olmo-core reference implementation using matching weights.
 """
 
+import dataclasses
+
 import pytest
 import torch
 import torch.nn as nn
@@ -11,7 +13,7 @@ import torch.nn as nn
 from t0_training.model.config import TransformerConfig
 from t0_training.model.ffn import FFN
 from t0_training.model.norm import RMSNorm
-from t0_training.model.rope import apply_rotary, precompute_freqs
+from t0_training.model.rope import apply_rotary, precompute_freqs, precompute_freqs_yarn
 
 requires_gpu = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
 
@@ -126,6 +128,122 @@ def test_precompute_freqs_matches_olmo_core():
     assert torch.allclose(our_sin, olmo_sin.float(), atol=1e-5), (
         f"sin max diff: {(our_sin - olmo_sin.float()).abs().max().item()}"
     )
+
+
+def test_precompute_freqs_yarn_matches_olmo_core():
+    """YaRN frequency tables should match olmo_core's RotaryEmbedding with
+    YaRNRoPEScalingConfig -- same config as Olmo-3-7B-Think-SFT's real HF
+    rope_scaling (see planning/write_dpo_code.md Phase 1 validation).
+
+    Isolates the RoPE math from any weight-loading error in the (separate)
+    checkpoint-import step: if this passes, a later logit-parity mismatch is
+    unambiguously not a RoPE bug.
+    """
+    import math
+
+    from olmo_core.nn.rope import RotaryEmbedding, YaRNRoPEScalingConfig
+
+    d_head = 16
+    seq_len = 32
+    theta = 500_000
+    factor, beta_fast, beta_slow = 8.0, 32, 1
+    original_max_position_embeddings = 8192
+    attention_factor = 0.1 * math.log(factor) + 1.0  # == 1.2079441541679836
+
+    our_cos, our_sin = precompute_freqs_yarn(
+        d_head, seq_len, float(theta),
+        factor, beta_fast, beta_slow,
+        original_max_position_embeddings, attention_factor,
+    )
+
+    olmo_rope = RotaryEmbedding(
+        head_size=d_head, theta=theta, full_precision=True,
+        scaling=YaRNRoPEScalingConfig(
+            factor=factor, beta_fast=beta_fast, beta_slow=beta_slow,
+            old_context_len=original_max_position_embeddings,
+        ),
+    )
+    olmo_sin, olmo_cos = olmo_rope._get_rotary_embedding(seq_len, torch.device("cpu"))
+
+    assert torch.allclose(our_cos, olmo_cos.float(), atol=1e-5), (
+        f"cos max diff: {(our_cos - olmo_cos.float()).abs().max().item()}"
+    )
+    assert torch.allclose(our_sin, olmo_sin.float(), atol=1e-5), (
+        f"sin max diff: {(our_sin - olmo_sin.float()).abs().max().item()}"
+    )
+
+
+def test_precompute_freqs_yarn_disabled_by_default():
+    """TransformerConfig without YaRN fields set must use plain RoPE (config_3b/
+    config_7b unaffected by adding YaRN as an opt-in second code path)."""
+    assert not _CFG.uses_yarn_rope
+
+
+def test_transformer_config_yarn_fields_must_be_set_together():
+    import dataclasses
+
+    partial = dataclasses.replace(_CFG, rope_scaling_factor=8.0)
+    with pytest.raises(ValueError, match="must be set together"):
+        partial.uses_yarn_rope
+
+
+def test_config_7b_yarn_matches_real_checkpoint():
+    """config_7b_yarn must carry Olmo-3-7B-Think-SFT's real HF rope_scaling
+    values exactly (see planning/write_dpo_code.md's compatibility-check table)."""
+    from t0_training.model.config import config_7b, config_7b_yarn
+
+    assert config_7b_yarn.uses_yarn_rope
+    assert config_7b_yarn.rope_scaling_factor == 8.0
+    assert config_7b_yarn.rope_beta_fast == 32.0
+    assert config_7b_yarn.rope_beta_slow == 1.0
+    assert config_7b_yarn.rope_original_max_position_embeddings == 8192
+    assert config_7b_yarn.rope_attention_factor == 1.2079441541679836
+    # Everything else should be untouched from config_7b.
+    assert config_7b_yarn.d_model == config_7b.d_model
+    assert config_7b_yarn.n_heads == config_7b.n_heads
+    assert not config_7b.uses_yarn_rope
+
+
+def test_transformer_applies_yarn_only_to_full_attention_layers():
+    """The real checkpoint's rope_scaling only applies to full-attention
+    layers -- sliding-window layers keep plain, unscaled RoPE (confirmed in
+    transformers' Olmo3Config.convert_rope_params_to_dict: rope_scaling only
+    updates rope_parameters["full_attention"], leaving "sliding_attention" at
+    plain rope_type="default"). Applying YaRN uniformly to every layer was a
+    real bug caught by the GPU logit-parity check -- this pins the fix."""
+    import dataclasses
+
+    from t0_training.model.transformer import Transformer
+
+    cfg = dataclasses.replace(
+        _CFG,
+        sliding_window_pattern=(4, -1),  # layer 0 sliding, layer 1 full
+        force_full_attention_on_first_layer=False,
+        force_full_attention_on_last_layer=False,
+        rope_scaling_factor=8.0,
+        rope_beta_fast=32.0,
+        rope_beta_slow=1.0,
+        rope_original_max_position_embeddings=8192,
+        rope_attention_factor=1.2079441541679836,
+    )
+    assert cfg.window_size_for_layer(0) == 4       # sliding
+    assert cfg.window_size_for_layer(1) is None    # full attention
+
+    model = Transformer(cfg)
+
+    expected_sliding_cos, expected_sliding_sin = precompute_freqs(_D_HEAD, cfg.max_seq_len, cfg.rope_theta)
+    expected_full_cos, expected_full_sin = precompute_freqs_yarn(
+        _D_HEAD, cfg.max_seq_len, cfg.rope_theta,
+        cfg.rope_scaling_factor, cfg.rope_beta_fast, cfg.rope_beta_slow,
+        cfg.rope_original_max_position_embeddings, cfg.rope_attention_factor,
+    )
+    assert torch.equal(model.cos_sliding, expected_sliding_cos)
+    assert torch.equal(model.sin_sliding, expected_sliding_sin)
+    assert torch.equal(model.cos_full, expected_full_cos)
+    assert torch.equal(model.sin_full, expected_full_sin)
+    # Sanity: the two tables must actually differ, or this test can't catch
+    # the uniform-YaRN-everywhere regression.
+    assert not torch.equal(model.cos_sliding, model.cos_full)
 
 
 def test_apply_rotary_shape():
@@ -307,6 +425,66 @@ def test_attention_gqa_config():
     x = torch.randn(2, 8, cfg.d_model, dtype=torch.bfloat16, device="cuda")
     out = attn(x, cos, sin)
     assert out.shape == x.shape
+
+
+def _attention_weights_on_keys(window_size, q_pos, keys):
+    """Runs the real Attention module so that attention is uniform over the
+    keys it lets query `q_pos` see, and returns the weight it puts on each of
+    `keys` (one key per channel, so at most d_head keys).
+
+    wq = wk = 0 makes q = k = 0 (also after qk-norm and RoPE), so all scores are
+    equal. wv routes input channel i to value channel i of each KV head, x has a 1
+    in channel i at position keys[i], and wo is the identity, so output channel i
+    at q_pos is exactly the attention weight on keys[i].
+    """
+    from t0_training.model.attention import Attention
+
+    cfg = dataclasses.replace(_CFG, max_seq_len=q_pos + 1)
+    attn = Attention(cfg, window_size=window_size)
+    d_head = cfg.d_model // cfg.n_heads
+    with torch.no_grad():
+        attn.wq.weight.zero_()
+        attn.wk.weight.zero_()
+        attn.wv.weight.zero_()
+        for i in range(len(keys)):
+            attn.wv.weight[i, i] = 1.0  # KV head 0, channel i <- input channel i
+        attn.wo.weight.copy_(torch.eye(cfg.d_model))
+    attn = attn.cuda().to(torch.bfloat16)
+
+    x = torch.zeros(1, q_pos + 1, cfg.d_model)
+    for i, key in enumerate(keys):
+        x[0, key, i] = 1.0
+    cos, sin = precompute_freqs(d_head, cfg.max_seq_len, cfg.rope_theta)
+    with torch.no_grad():
+        out = attn(x.cuda().to(torch.bfloat16), cos.cuda(), sin.cuda())
+    return [out[0, q_pos, i].item() for i in range(len(keys))]  # query head 0 uses KV head 0
+
+
+@requires_gpu
+@pytest.mark.parametrize("offset", [0, 1, 5])
+def test_attention_sliding_window_boundary_matches_hf(offset):
+    """A window of w keeps exactly the w most recent keys, including the query
+    itself, matching HF's sliding-window mask (`kv_idx > q_idx - sliding_window`,
+    transformers.masking_utils.sliding_window_overlay).
+
+    Being off by one here changes 1 key out of 4096 for OLMo3-7B, which is
+    invisible in bf16 logit-parity checks, so it is tested directly.
+    """
+    w = 8
+    q_pos = w + offset
+    excluded, first_included, newest = _attention_weights_on_keys(w, q_pos, [q_pos - w, q_pos - w + 1, q_pos])
+    assert excluded == 0.0
+    assert first_included == pytest.approx(1 / w, rel=1e-2)
+    assert newest == pytest.approx(1 / w, rel=1e-2)
+
+
+@requires_gpu
+def test_attention_full_attention_sees_all_keys():
+    """window_size=None is plain causal attention over every earlier key, so the
+    same setup puts weight 1/(q_pos + 1) on the oldest key."""
+    q_pos = 12
+    (oldest,) = _attention_weights_on_keys(None, q_pos, [0])
+    assert oldest == pytest.approx(1 / (q_pos + 1), rel=1e-2)
 
 
 @requires_gpu
@@ -665,8 +843,10 @@ def test_transformer_rope_buffers_not_saved_in_state_dict():
 
     model = Transformer(_CFG).cuda().to(torch.bfloat16)
     keys = set(model.state_dict().keys())
-    assert "cos" not in keys
-    assert "sin" not in keys
+    assert "cos_full" not in keys
+    assert "sin_full" not in keys
+    assert "cos_sliding" not in keys
+    assert "sin_sliding" not in keys
 
 
 @requires_gpu

@@ -21,7 +21,6 @@ export NCCL_CROSS_NIC="1"
 
 # NCCL debugging
 export NCCL_DEBUG=INFO
-export NCCL_DEBUG_FILE=logs/nccl-%h.%p.log
 
 MASTER_HOST=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
 MASTER_ADDR=$(srun --nodes=1 --ntasks=1 -w $MASTER_HOST hostname -i | tr -d ' ')

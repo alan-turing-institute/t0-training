@@ -1,3 +1,4 @@
+import dataclasses
 from dataclasses import dataclass
 
 from olmo_core.data import TokenizerConfig
@@ -19,6 +20,26 @@ class TransformerConfig:
     max_seq_len: int
     rope_theta: float = 500_000.0
     qk_norm: bool = True    # RMSNorm on Q and K after projection (OLMo3 default)
+
+    # YaRN RoPE scaling (https://arxiv.org/abs/2309.00071) parameters.
+    # Must all be set together or all be None
+    rope_scaling_factor: float | None = None
+    rope_beta_fast: float | None = None
+    rope_beta_slow: float | None = None
+    rope_original_max_position_embeddings: int | None = None
+    rope_attention_factor: float | None = None
+
+    @property
+    def uses_yarn_rope(self) -> bool:
+        yarn_fields = (
+            self.rope_scaling_factor, self.rope_beta_fast, self.rope_beta_slow,
+            self.rope_original_max_position_embeddings, self.rope_attention_factor,
+        )
+        if all(f is None for f in yarn_fields):
+            return False
+        if any(f is None for f in yarn_fields):
+            raise ValueError("YaRN RoPE fields must be set together, or not at all")
+        return True
 
     # Sliding-window attention (OLMo3). `sliding_window_pattern` is repeated
     # across layers; -1 means full (global) attention for that slot. None
@@ -71,4 +92,16 @@ config_7b = TransformerConfig(
     sliding_window_pattern=(4096, 4096, 4096, -1),
     force_full_attention_on_first_layer=False,
     force_full_attention_on_last_layer=True,
+)
+
+# config_7b + YaRN RoPE scaling, matching Olmo-3-7B-Think-SFT's rope_scaling config
+config_7b_yarn = dataclasses.replace(
+    config_7b,
+    rope_scaling_factor=8.0,
+    rope_beta_fast=32.0,
+    rope_beta_slow=1.0,
+    rope_original_max_position_embeddings=8192,
+    rope_attention_factor=1.2079441541679836,
+    # TODO: max_seq_len left at config_7b's default (4096) for now
+    # Should be adjusted after looking at seq length distribution in Dolci-Think-DPO-7B dataset
 )
