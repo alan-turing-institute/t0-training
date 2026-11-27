@@ -99,8 +99,10 @@ def validate_logit_parity(
     ids = tokenizer(text, return_tensors="pt").input_ids[:, :n_tokens].cuda()
     assert ids.shape[1] == n_tokens, f"only {ids.shape[1]} tokens of docs text available"
 
+    # load HF model in bf16
     hf_model = AutoModelForCausalLM.from_pretrained(hf_id, dtype=torch.bfloat16).cuda().eval()
     hf_vocab = hf_model.config.vocab_size
+    # run the input through the HF model, this is the reference output
     with torch.no_grad():
         ref = hf_model(ids).logits[0].float().cpu()
     del hf_model
@@ -110,10 +112,13 @@ def validate_logit_parity(
     # bf16 weights without downcasting those float32 buffers.
     model = Transformer(dataclasses.replace(config_7b_yarn, max_seq_len=max(config_7b_yarn.max_seq_len, n_tokens))).cuda()
     model.load_state_dict(torch.load(imported_path, map_location="cuda"), strict=True, assign=True)
+    # run the input through the imported model
     with torch.no_grad():
         test = model.eval()(ids)[0, :, :hf_vocab].float().cpu()  # drop padded vocab rows
 
+    # top1 == fraction of positions where ref matches test
     top1 = (ref.argmax(-1) == test.argmax(-1)).float()
+    # kl divergence of the reference distribution (HF) from the test distribution (imported)
     kl = F.kl_div(F.log_softmax(test, -1), F.log_softmax(ref, -1), log_target=True, reduction="none").sum(-1)
     failures = []
     for region, start in [("all", 0), (">4096", 4096), (">8192", 8192)]:
