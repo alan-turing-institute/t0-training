@@ -36,6 +36,9 @@ module load gcc-native/12.3
 module load brics/nccl/2.26.6-1
 module load brics/aws-ofi-nccl
 
+# Let the CUDA caching allocator grow segments instead of fragmenting (fewer spurious OOMs).
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+
 source .env
 export WANDB_API_KEY
 : "${WANDB_API_KEY:?WANDB_API_KEY is not set (put it in .env or export it before submitting)}"
