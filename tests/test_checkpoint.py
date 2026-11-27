@@ -10,7 +10,7 @@ from t0_training.data import DistributedDataLoader, NumpyDataset
 from t0_training.model.config import TransformerConfig
 from t0_training.model.transformer import Transformer
 from t0_training.optim import build_optimizer
-from t0_training.train import CheckpointManager, Trainer, TrainingConfig, capture_rng_state
+from t0_training.train import CheckpointManager, Trainer, TrainingConfig, capture_rng_state, load_seed_checkpoint
 
 requires_gpu = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
 
@@ -209,3 +209,61 @@ def test_trainer_checkpoint_resume_matches_uninterrupted_run(tmp_path):
         assert torch.allclose(ref_tensor, resumed_final_state[name], atol=1e-3), (
             f"mismatch in {name} after resume"
         )
+
+
+# ---------------------------------------------------------------------------
+# load_seed_checkpoint: seeding a new run from a flat (imported) state dict
+# ---------------------------------------------------------------------------
+
+
+def _save_bf16_seed(tmp_path: Path) -> Path:
+    """A flat bf16 state dict, like scripts/import_hf_checkpoint.py's output."""
+    torch.manual_seed(0)
+    seed_sd = {k: v.to(torch.bfloat16) for k, v in Transformer(_MODEL_CFG).state_dict().items()}
+    path = tmp_path / "seed.pt"
+    torch.save(seed_sd, path)
+    return path
+
+
+def test_load_seed_checkpoint_keeps_fp32_and_copies_values(tmp_path):
+    path = _save_bf16_seed(tmp_path)
+    torch.manual_seed(1)  # different init, so the copy is visible
+    model = Transformer(_MODEL_CFG)
+    load_seed_checkpoint(model, path)
+
+    seed_sd = torch.load(path)
+    assert {p.dtype for p in model.parameters()} == {torch.float32}
+    for name, value in model.state_dict().items():
+        assert torch.equal(value, seed_sd[name].float()), name
+
+
+def test_load_seed_checkpoint_rejects_missing_key(tmp_path):
+    path = _save_bf16_seed(tmp_path)
+    seed_sd = torch.load(path)
+    del seed_sd["blocks.0.attn.wq.weight"]
+    torch.save(seed_sd, path)
+    with pytest.raises(RuntimeError, match="blocks.0.attn.wq.weight"):
+        load_seed_checkpoint(Transformer(_MODEL_CFG), path)
+
+
+def test_load_seed_checkpoint_rejects_compiled_model(tmp_path):
+    from t0_training.distributed import compile_model
+
+    path = _save_bf16_seed(tmp_path)
+    with pytest.raises(ValueError, match="before compile_model"):
+        load_seed_checkpoint(compile_model(Transformer(_MODEL_CFG)), path)
+
+
+@requires_gpu
+def test_load_seed_checkpoint_then_compile_runs_forward(tmp_path):
+    """Seeding must leave the model usable by the normal compile path (flash-attn
+    needs CUDA, so the forward is GPU-only)."""
+    from t0_training.distributed import compile_model
+
+    path = _save_bf16_seed(tmp_path)
+    model = Transformer(_MODEL_CFG).cuda()
+    load_seed_checkpoint(model, path)
+    model = compile_model(model).to(torch.bfloat16)
+    tokens = torch.randint(0, _MODEL_CFG.vocab_size, (2, 16), device="cuda")
+    with torch.no_grad():
+        assert torch.isfinite(model(tokens)).all()

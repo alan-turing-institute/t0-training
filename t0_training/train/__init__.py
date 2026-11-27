@@ -1,4 +1,4 @@
-from .checkpoint import CheckpointManager, capture_rng_state, restore_rng_state
+from .checkpoint import CheckpointManager, capture_rng_state, load_seed_checkpoint, restore_rng_state
 from .scheduler import get_lr, set_lr
 from .trainer import TrainerStateDict, TrainingConfig, Trainer
 
@@ -10,5 +10,6 @@ __all__ = [
     "TrainerStateDict",
     "CheckpointManager",
     "capture_rng_state",
+    "load_seed_checkpoint",
     "restore_rng_state",
 ]

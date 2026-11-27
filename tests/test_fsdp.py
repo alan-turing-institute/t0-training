@@ -9,14 +9,17 @@ non-zero code if any assertion fails on any rank.
 """
 
 import sys
+import tempfile
+from pathlib import Path
 
 import torch
 import torch.distributed as dist
 import torch.nn.functional as F
 
-from t0_training.distributed import init_distributed, wrap_model_fsdp
+from t0_training.distributed import compile_model, init_distributed, wrap_model_fsdp
 from t0_training.model.config import TransformerConfig
 from t0_training.model.transformer import Transformer
+from t0_training.train import load_seed_checkpoint
 
 # Small config so tests run quickly on any GPU count
 CONFIG = TransformerConfig(
@@ -163,6 +166,47 @@ def test_backward_completes(model: Transformer):
         _pass("test_backward_completes")
 
 
+def test_seed_then_compile_then_wrap_matches_unwrapped():
+    """Seeding a new run (load_seed_checkpoint -> compile_model -> wrap_model_fsdp)
+    gives the same logits as the seeded model before compiling and sharding, and
+    clearly different logits from an unseeded model."""
+    torch.manual_seed(0)
+    seed_sd = {k: v.to(torch.bfloat16) for k, v in Transformer(CONFIG).state_dict().items()}
+    tokens = torch.randint(0, CONFIG.vocab_size, (2, CONFIG.max_seq_len), device="cuda")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "seed.pt"
+        torch.save(seed_sd, path)
+
+        reference = Transformer(CONFIG).cuda()
+        load_seed_checkpoint(reference, path)
+        torch.manual_seed(1)
+        unseeded = Transformer(CONFIG).cuda().to(torch.bfloat16)
+        with torch.no_grad():
+            ref_logits = reference.to(torch.bfloat16)(tokens).float()
+            unseeded_logits = unseeded(tokens).float()
+        del reference, unseeded
+
+        model = Transformer(CONFIG).cuda()
+        load_seed_checkpoint(model, path)
+    model = wrap_model_fsdp(compile_model(model))
+    with torch.no_grad():
+        logits = model(tokens).float()
+
+    diff = (logits - ref_logits).abs().max().item()
+    unseeded_diff = (unseeded_logits - ref_logits).abs().max().item()
+    if diff > 0.05 or unseeded_diff < 10 * max(diff, 0.05):
+        _fail(
+            f"test_seed_then_compile_then_wrap_matches_unwrapped: max abs diff vs "
+            f"unwrapped seeded={diff:.4f}, vs unseeded={unseeded_diff:.4f}"
+        )
+    else:
+        _pass(
+            f"test_seed_then_compile_then_wrap_matches_unwrapped "
+            f"(max abs diff {diff:.4f}; unseeded model differs by {unseeded_diff:.2f})"
+        )
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -184,6 +228,9 @@ def main():
     dist.barrier()
 
     test_backward_completes(model)
+    dist.barrier()
+
+    test_seed_then_compile_then_wrap_matches_unwrapped()
     dist.barrier()
 
     if rank == 0:
