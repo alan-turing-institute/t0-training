@@ -394,11 +394,11 @@ class TestParallelismConfig:
 
         tm = _build(
             tmp_path,
-            {"float8_config": {"recipe": "rowwise", "modules_to_ignore": ["lm_head"]}},
+            {"float8_config": {"recipe": "rowwise", "modules_to_ignore": ["lm_head.w_out"]}},
         )
         assert tm.float8_config.enabled is True
         assert tm.float8_config.ao_recipe == AOFloat8LinearRecipe.rowwise
-        assert tm.float8_config.modules_to_ignore == ["lm_head"]
+        assert tm.float8_config.modules_to_ignore == ["lm_head.w_out"]
 
     def test_float8_can_be_disabled(self, tmp_path):
         tm = _build(tmp_path, {"float8_config": {"enabled": False}})
@@ -470,6 +470,7 @@ _7B_VARIANTS = {
     "cp": "cp_config",
     "ac": "ac_config",
     "float8": "float8_config",
+    "ddp": "dp_config",
 }
 _FEATURES = ("tp_config", "pp_config", "cp_config", "ac_config", "float8_config")
 
@@ -502,9 +503,12 @@ class TestOlmo3SevenBVariants:
         from olmo_core.distributed.parallel import DataParallelType
 
         built = _7b_train_module(f"olmo3-7B-{variant}.yaml")
-        if feature == "dp_config":
+        if variant == "hsdp":
             assert built["dp_config"].name == DataParallelType.hsdp
             assert (built["dp_config"].num_replicas, built["dp_config"].shard_degree) == (4, 4)
+            assert all(built[f] is None for f in _FEATURES)
+        elif variant == "ddp":
+            assert built["dp_config"].name == DataParallelType.ddp
             assert all(built[f] is None for f in _FEATURES)
         else:
             assert built[feature] is not None
@@ -523,3 +527,71 @@ class TestOlmo3SevenBVariants:
             for f in _FEATURES:
                 d["train_module"].pop(f, None)
         assert var == base
+
+
+def _eval_enabled(tmp_path, extra=None, overrides=None):
+    yaml_path = _write_minimal_config(tmp_path)
+    if extra:
+        _with_train_module(yaml_path, extra)
+    cbs = build_experiment_config(
+        config_path=str(yaml_path), run_name="test", overrides=overrides
+    ).trainer.callbacks
+    return cbs["lm_evaluator"].enabled, cbs["downstream_evaluator"].enabled
+
+
+class TestEvaluatorGating:
+    """Evaluators must be switched off where OLMo-core cannot run them."""
+
+    def test_enabled_by_default(self, tmp_path):
+        assert _eval_enabled(tmp_path) == (True, True)
+
+    def test_pipeline_parallel_disables_both(self, tmp_path):
+        assert _eval_enabled(tmp_path, {"pp_config": {"degree": 2}}) == (False, False)
+
+    @pytest.mark.parametrize("section", ["tp_config", "cp_config"])
+    def test_tp_cp_disable_downstream_only(self, tmp_path, section):
+        assert _eval_enabled(tmp_path, {section: {"degree": 2}}) == (True, False)
+
+    def test_float8_modules_to_ignore_exist_in_model(self):
+        """OLMo-core raises at startup if a modules_to_ignore name is not a module FQN."""
+        import torch
+
+        from olmo_core.nn.transformer import TransformerConfig
+
+        built = _7b_train_module("olmo3-7B-float8.yaml")
+        model = TransformerConfig.olmo2_30M(vocab_size=128).build(init_device="meta")
+        names = {n for n, m in model.named_modules() if isinstance(m, torch.nn.Linear)}
+        assert set(built["float8_config"].modules_to_ignore) <= names
+
+
+def test_ddp_ac_variant_is_ddp_plus_full_ac():
+    from olmo_core.distributed.parallel import DataParallelType
+
+    built = _7b_train_module("olmo3-7B-ddp-ac.yaml")
+    assert built["dp_config"].name == DataParallelType.ddp
+    assert built["ac_config"] is not None
+    assert all(built[f] is None for f in _FEATURES if f != "ac_config")
+
+
+def test_optim_foreach_from_yaml(tmp_path):
+    """foreach defaults on; DDP configs turn it off to avoid full-size optimizer temporaries."""
+    import yaml
+
+    (tmp_path / "default").mkdir()
+    assert _build(tmp_path / "default").optim.foreach is True
+    (tmp_path / "off").mkdir()
+    yaml_path = _write_minimal_config(tmp_path / "off")
+    raw = yaml.safe_load(yaml_path.read_text())
+    raw["train_module"].setdefault("optim", {})["foreach"] = False
+    yaml_path.write_text(yaml.safe_dump(raw))
+    tm = build_experiment_config(config_path=str(yaml_path), run_name="t").train_module
+    assert tm.optim.foreach is False
+
+
+def test_7b_pp_uses_a_custom_schedule():
+    """The PP train module only accepts OLMo-core's custom schedules (with custom stages)."""
+    from olmo_core.distributed.parallel import PipelineScheduleType
+
+    pp = _7b_train_module("olmo3-7B-pp.yaml")["pp_config"]
+    assert pp.schedule in (PipelineScheduleType.custom_interleaved_1F1B, PipelineScheduleType.custom_1F1B_V)
+    assert pp.use_custom_stage_implementation is True

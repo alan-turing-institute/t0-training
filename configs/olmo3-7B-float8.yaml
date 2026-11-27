@@ -36,7 +36,7 @@ train_module:
     reduce_dtype: float32
   float8_config:
     recipe: rowwise
-    modules_to_ignore: [lm_head]
+    modules_to_ignore: [lm_head.w_out]
 
 # --- Trainer ---
 trainer:

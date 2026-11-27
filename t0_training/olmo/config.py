@@ -409,6 +409,9 @@ def build_experiment_config(
             lr=float(optim_cfg.get("lr", 1e-3)),
             weight_decay=float(optim_cfg.get("weight_decay", 0.1)),
             betas=tuple(optim_cfg.get("betas", [0.9, 0.95])),
+            # foreach (multi-tensor) kernels are faster but allocate several full-model-size
+            # temporaries; set false when the optimizer state is not sharded (DDP).
+            foreach=bool(optim_cfg.get("foreach", True)),
             group_overrides=[
                 OptimGroupOverride(
                     params=["embeddings.weight"], opts=dict(weight_decay=0.0)
@@ -435,6 +438,16 @@ def build_experiment_config(
     # Eval settings
     lm_eval = cb.get("lm_evaluator", {})
     downstream_eval = cb.get("downstream_evaluator", {})
+    lm_eval_enabled = bool(lm_eval.get("enabled", True))
+    downstream_eval_enabled = bool(downstream_eval.get("enabled", True))
+    # OLMo-core's evaluator callbacks refuse the pipeline-parallel train module, and the
+    # downstream evaluator needs full logits, which TP and CP do not produce.
+    if tm.get("pp_config") is not None and (lm_eval_enabled or downstream_eval_enabled):
+        log.warning("pp_config is set: disabling lm_evaluator and downstream_evaluator (unsupported with PP)")
+        lm_eval_enabled = downstream_eval_enabled = False
+    if downstream_eval_enabled and (tm.get("tp_config") is not None or tm.get("cp_config") is not None):
+        log.warning("tp_config/cp_config is set: disabling downstream_evaluator (needs full logits)")
+        downstream_eval_enabled = False
     # Logging settings
     comet_cfg = cb.get("comet", {})
     wandb_cfg = cb.get("wandb", {})
@@ -496,6 +509,7 @@ def build_experiment_config(
                 ),
                 eval_interval=lm_eval.get("eval_interval", 250),
                 eval_duration=Duration.steps(lm_eval.get("eval_duration_steps", 50)),
+                enabled=lm_eval_enabled,
             ),
         )
         .with_callback(
@@ -504,6 +518,7 @@ def build_experiment_config(
                 tasks=downstream_eval.get("tasks", ["hellaswag"]),
                 tokenizer=tokenizer_config,
                 eval_interval=downstream_eval.get("eval_interval", 250),
+                enabled=downstream_eval_enabled,
             ),
         )
     )

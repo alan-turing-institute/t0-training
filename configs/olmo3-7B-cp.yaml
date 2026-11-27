@@ -1,5 +1,6 @@
-# OLMo3 7B variant: context parallel (CP=2, ring attention).
-# CP=2 splits each sequence across 2 GPUs, so DP = 16 / 2 = 8. Ring attention needs flash-attn.
+# OLMo3 7B variant: context parallel (CP=2, Ulysses all-to-all attention).
+# CP=2 splits each sequence across 2 GPUs, so DP = 16 / 2 = 8. Ulysses works with flash-attn as installed;
+# style: ring (zig_zag/llama3) additionally needs the ring-flash-attn package, which is not installed.
 # Otherwise identical to olmo3-7B.yaml (16 GPUs = 4 nodes x 4 GPUs in batch/7b/*.sh).
 # All values here are defaults that can be overridden via CLI dotlist args.
 
@@ -36,8 +37,7 @@ train_module:
     reduce_dtype: float32
   cp_config:
     degree: 2
-    style: ring
-    load_balancer: zig_zag
+    style: ulysses
 
 # --- Trainer ---
 trainer:

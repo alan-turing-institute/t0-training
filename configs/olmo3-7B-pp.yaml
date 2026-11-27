@@ -1,5 +1,5 @@
 # OLMo3 7B variant: pipeline parallel (PP=2).
-# PP=2 (16 layers per stage), so DP = 16 / 2 = 8. The 7B model has untied embeddings, which PP requires.
+# PP=2 ranks x 2 interleaved stages (8 layers per stage), so DP = 16 / 2 = 8. The 7B model has untied embeddings, which PP requires.
 # Otherwise identical to olmo3-7B.yaml (16 GPUs = 4 nodes x 4 GPUs in batch/7b/*.sh).
 # All values here are defaults that can be overridden via CLI dotlist args.
 
@@ -36,7 +36,8 @@ train_module:
     reduce_dtype: float32
   pp_config:
     degree: 2
-    schedule: 1F1B
+    schedule: CustomInterleaved1F1B   # only the custom schedules are wired into the PP train module
+    use_custom_stage_implementation: true
 
 # --- Trainer ---
 trainer:
