@@ -40,8 +40,8 @@ def load_seed_checkpoint(model: torch.nn.Module, path: str | Path) -> None:
     Deliberately not `assign=True` since wrap_model_fsdp requires fp32. 
     mmap=True lets ranks on a node share one page-cached copy of the file.
     """
-    # wrap_model_fsdp() adds _orig_mod to the state dict keys
-    # raise error if the model has already been wrapped
+    # compile_model() (torch.compile) adds _orig_mod to the state dict keys;
+    # raise if the model has already been compiled
     if any("_orig_mod" in key for key in model.state_dict()):
         raise ValueError("load_seed_checkpoint must be called before compile_model().")
     
