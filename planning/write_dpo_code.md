@@ -197,14 +197,15 @@ The `validate_logit_parity` function checks:
 
 ## Phase 3: Seeding vs. resuming — a deliberate design split
 
-**Files:** `train/checkpoint.py` (no changes), new helper in
-`scripts/train_dpo.py`
+**Files:** `train/checkpoint.py` (`CheckpointManager` unchanged; new
+standalone `load_seed_checkpoint(model, path)` helper alongside it, so
+Phase 4's reference model can reuse it), `scripts/train_dpo.py`
 
 **Decision: don't extend `CheckpointManager`.** Load the Phase 2 state dict
 directly into the plain `nn.Module` with `model.load_state_dict(...)`
-before `wrap_model_fsdp()` is called — then `CheckpointManager` is free to
-do exactly what it already does, unmodified: checkpoint and resume the DPO
-run itself, mid-training, same as pretraining.
+before `compile_model()` and `wrap_model_fsdp()` are called — then
+`CheckpointManager` is free to do exactly what it already does, unmodified:
+checkpoint and resume the DPO run itself, mid-training, same as pretraining.
 
 Why: `CheckpointManager.load()` is built specifically for *resuming an
 interrupted run* — it always loads model + optimizer state together via DCP
@@ -215,11 +216,43 @@ resume happens *after* (each rank's own shard). Extending `CheckpointManager`
 to support both would work, but solves two problems with one mechanism.
 
 ```python
-model = Transformer(config_7b_yarn)
-model.load_state_dict(torch.load("checkpoints/olmo3-7b-think-sft-imported.pt"))
-model = wrap_model_fsdp(model)          # unchanged from the pretraining path
+model = Transformer(config_7b_yarn).cuda()  # fp32, as in scripts/train.py
+load_seed_checkpoint(model, "checkpoints/olmo3-7b-think-sft-imported.pt")
+model = compile_model(model)             # unchanged from the pretraining path
+model = wrap_model_fsdp(model)           # unchanged from the pretraining path
 optimizer = build_optimizer(model, ...)  # fresh optimizer, step 0 — this is a new run
 ```
+
+`load_seed_checkpoint` will be
+`model.load_state_dict(torch.load(path, mmap=True, map_location="cpu"), strict=True)`.
+Three details matter:
+
+- **Order: seed → compile → wrap.** `compile_model` replaces each block
+  with a `torch.compile` wrapper, which renames its parameters
+  (`blocks.0.attn.wq.weight` → `blocks.0._orig_mod.attn.wq.weight`), so
+  the flat state dict only loads before compilation.
+- **No `assign=True`** (unlike `scripts/import_hf_checkpoint.py`). The
+  seed file is bf16, but `wrap_model_fsdp` requires fp32 params as the
+  optimizer master. A plain `load_state_dict` copies the bf16 values into
+  the existing fp32 params; `assign=True` would make them bf16 and the
+  wrap would raise.
+- **`mmap=True`.** Every rank loads the full ~14 GB file before sharding;
+  memory-mapping lets ranks on a node share one page-cached copy instead
+  of each holding its own.
+
+When resuming an interrupted DPO run, `trainer.resume_from_latest()`
+overwrites the seeded weights with the run's own DCP checkpoint, so seeding
+first is harmless; `scripts/train_dpo.py` will skip it when
+`latest_checkpoint()` finds one, to avoid the wasted load.
+
+### Phase 3 validation
+
+- CPU unit tests (tiny config): seeded params are fp32 and equal the bf16
+  values from the file; a missing or misnamed key fails the strict load;
+  a seeded model still compiles and runs forward.
+- GPU test (single-process `torchrun`, like the existing FSDP tests):
+  seed → compile → wrap, and check the wrapped model's logits match the
+  unwrapped seeded model's on the same input.
 
 ---
 
@@ -228,7 +261,7 @@ optimizer = build_optimizer(model, ...)  # fresh optimizer, step 0 — this is a
 **Files:** `scripts/train_dpo.py`, `train/dpo_trainer.py`
 
 Build a second `Transformer(config_7b_yarn)`, load the *same* Phase 2 state
-dict into it, `requires_grad_(False)`, `.eval()`, then FSDP-wrap it too (for
+dict into it with Phase 3's `load_seed_checkpoint`, `requires_grad_(False)`, `.eval()`, then FSDP-wrap it too (for
 memory sharding across ranks — at 7B there's no reason not to shard a model
 just because it isn't training). No optimizer, no gradient accumulation, no
 entry in `CheckpointManager` — it's a static, re-derivable artifact
